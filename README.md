@@ -1,180 +1,195 @@
-# Campus Connect
+# Campus Connect — College Event & Volunteer Management System
 
-Campus Connect is a modular Flask + MySQL college event and volunteer management platform.
+Campus Connect is a role-based Flask web application for managing college events, compulsory & optional student registrations, volunteer workflows, QR/unique-key attendance check-in, post-event verifiable PDF certificates, campus resource bookings, and analytics.
 
-## Phase 1 features
+## Tech Stack
 
-- Flask application factory and modular blueprints
-- Role-based access for admin, coordinator, and student users
-- Secure password hashing and Flask-Login sessions
-- CSRF-protected login and registration forms
-- SQLAlchemy models for users, roles, departments, and clubs
-- Initial responsive dashboards
-- Database-backed admin department statistics
-- Flask-Migrate and Docker support
-- Phase 1 automated tests
+- **Backend:** Python 3.10+, Flask 3.1, Flask-SQLAlchemy, Flask-Migrate (Alembic), Flask-Login, Flask-WTF (CSRF protection)
+- **Database:** SQLite (local development) / MySQL 8 via PyMySQL (production)
+- **Frontend:** Bootstrap 5, Font Awesome, Chart.js, [`html5-qrcode`](https://github.com/mebjas/html5-qrcode) (live camera & image QR scanning)
+- **PDF & QR Generation:** ReportLab, `qrcode`, Pillow
+- **Deployment:** Gunicorn, Docker & Docker Compose, Nginx
 
-## Phase 2 features
+---
 
-- Event categories and event creation/editing
-- Poster image uploads
-- Coordinator event cancellation
-- Admin event approval and rejection
-- Public event search and category filtering
-- Duplicate-safe event registration
-- Registration deadline and capacity validation
-- Participant lists
-- Volunteer applications
-- Coordinator approval, rejection, and role assignment
-- Student registration and volunteer application histories
+## Key Features
 
-### Phase 2 workflow
+### Students
+- Self-registration with administrator approval before login.
+- **Compulsory event alerts:** Pending compulsory events appear at the top of the student dashboard with a one-click **Register now** action; compulsory registrations cannot be cancelled.
+- **Attendance QR passes & unique keys:** Inline QR codes and verifiable short unique keys (`P-<id>-<hex>` for participants, `V-<id>-<hex>` for approved volunteers) with one-click copy across the dashboard, registrations, volunteering, and event detail pages.
+- **Volunteering & tasks:** Apply to volunteer for published events, view assigned roles, update task progress (`assigned`, `in_progress`, `completed`), and track deadlines.
+- **Certificates:** Automatically receive **Participation (`CPC-`)** and **Volunteer (`CVC-`)** PDF certificates after an event ends once QR attendance has been scanned.
+- Feedback submission (with optional anonymity), event recommendations based on interests/department, and notifications.
 
-1. Sign in as a coordinator and create an event.
-2. Sign in as an admin and approve or reject the event.
-3. Sign in as a student to browse, register, or apply to volunteer.
-4. Sign in as the coordinator to review and assign approved volunteers.
+### Coordinators
+- Create and edit events (including multi-day dates, volunteer limits, poster uploads, and **Registration compulsory** toggle) and submit for admin approval.
+- View confirmed participants and **Pending compulsory registrations** (eligible students who have not yet registered).
+- Approve/reject volunteer applications, assign volunteer roles, and assign/manage volunteer tasks with deadlines.
+- **Live QR code check-in scanner:** Scan student participant and volunteer QR codes via webcam or uploaded QR image, enter a student's unique key (`P-...` / `V-...`) if the scanner is unavailable, or record manual attendance (reporting only).
+- Mark events as ended (`POST /events/<id>/complete`) to trigger automatic certificate issuance for QR-verified attendees, review feedback & extracted themes, manage event budgets/expenses, upload event gallery photos, and book campus resources with conflict detection.
 
-## Phase 3 features
+### Administrators
+- Approve or reject student sign-ups and toggle student account status.
+- Approve, reject, edit, end, or delete events; issue coordinator certificates (`CCC-`).
+- Manage departments, campus clubs, and campus resources (auditoriums, seminar halls, labs, etc.).
+- View department participation, category mix, and event lifecycle charts on the admin dashboard and analytics page.
+- Publicly verify any certificate via `/certificates/verify/<certificate_id>`.
 
-- Volunteer task creation and deadline tracking
-- Student task status updates
-- In-app task, registration, volunteer, and attendance notifications
-- Unread notification counts and mark-as-read controls
-- Unique QR attendance codes for registrations
-- QR attendance validation with duplicate protection
-- Manual coordinator attendance fallback
-- Attendance reports
-- Database-backed coordinator and student task/attendance statistics
+---
 
-## Phase 4 features
+## Project Structure
 
-- Participation, volunteer, and event coordination PDF certificates
-- Unique certificate IDs and QR verification codes
-- Public valid/invalid certificate verification pages
-- Certificate download and certificate history
-- Duplicate certificate prevention
-- Certificate availability notifications
-- Chart.js analytics for event categories and event lifecycle status
-
-## Phase 5 features
-
-- Star-rating and suggestions event feedback
-- Optional anonymous feedback submission
-- Duplicate feedback prevention
-- Coordinator feedback review and average ratings
-- Admin department creation and deletion with usage protection
-- Admin club creation and activation/deactivation
-- Department-wise event filtering
-- Month-by-month published event calendar
-
-## Phase 6 features
-
-- Event gallery uploads and public gallery pages
-- Volunteer leaderboard based on recorded hours
-- Coordinator volunteer-hours recording
-- Student volunteer-hours history
-- Event budgets and expense tracking
-- Classroom, seminar hall, auditorium, and laboratory resources
-- Resource booking with overlapping-time conflict detection
-- Budget and resource database relationships
-
-## Phase 7 features
-
-- Rule-based event recommendations from interests, department, and participation history
-- Student category-interest preferences
-- Volunteer-role recommendations based on prior approved or rejected applications
-- Rule-based event description drafts
-- Feedback theme extraction using keyword groups
-- No paid API, external AI service, or generative model dependency
-
-## Phase 8 testing and deployment
-
-- Consolidated pytest suite covers authentication, authorization, registration, capacity, attendance, certificates, feedback, resources, and rule-based recommendations
-- `/health` provides a database connectivity check
-- Production responses include security headers
-- `flask seed-demo` creates idempotent demo accounts and one published event
-- Demo account password: `CampusDemo123!`
-- Demo accounts should never be enabled in a public production deployment
-
-## Production deployment
-
-1. Copy `.env.example` to `.env` and set a unique 32+ character `SECRET_KEY`.
-2. Set `SESSION_COOKIE_SECURE=true` and serve the application behind HTTPS.
-3. Configure `DATABASE_URL` for a managed MySQL 8 database.
-4. Run `flask db upgrade`.
-5. Run `flask init-db` for system categories and departments.
-6. Use Gunicorn for the container entrypoint.
-
-```powershell
-docker compose up --build -d
-docker compose exec web flask db upgrade
-docker compose exec web flask init-db
+```text
+college_event_management/
+├── app/
+│   ├── __init__.py          # App factory, CLI commands (init-db, create-admin, seed-demo), /health
+│   ├── models.py            # SQLAlchemy models and attendance_key / event end helpers
+│   ├── decorators.py        # Role-based access control decorator
+│   ├── admin/               # Admin dashboard, student & event management
+│   ├── advanced/            # Galleries, budgets/expenses, resources & bookings, leaderboard
+│   ├── analytics/           # Admin analytics views
+│   ├── assistance/          # Rule-based event recommendations, role hints, feedback themes
+│   ├── attendance/          # QR pass generation, live scan API, validation & reports
+│   ├── auth/                # Login, registration, logout
+│   ├── certificates/        # PDF certificate generation, QR gating, verification & history
+│   ├── community/           # Departments, clubs, monthly calendar
+│   ├── coordinator/         # Coordinator dashboard, events & volunteer applications
+│   ├── events/              # Event CRUD, registrations, compulsory tracking, volunteers
+│   ├── feedback/            # Event feedback submission & review
+│   ├── main/                # Landing page & role redirect
+│   ├── notifications/       # In-app notification feed & read state
+│   ├── student/             # Student dashboard, registrations & volunteering views
+│   ├── tasks/               # Volunteer task assignment & status updates
+│   ├── static/              # Custom CSS and JavaScript
+│   └── templates/           # Jinja2 templates
+├── deploy/                  # Nginx reverse-proxy example config
+├── docs/                    # Deployment, backup/restore, manuals & security docs
+├── migrations/              # Alembic database migrations
+├── scripts/                 # MySQL backup/restore scripts & SQLite smoke tests
+├── tests/                   # Pytest test suite
+├── config.py                # Config & ProductionConfig
+├── Dockerfile
+├── docker-compose.yml
+├── Procfile
+├── requirements.txt
+├── requirements-dev.txt
+└── run.py
 ```
 
-## Phase 9 handover package
+---
 
-- [Production deployment guide](docs/DEPLOYMENT.md)
-- [Database backup and restoration](docs/BACKUP_RESTORE.md)
-- [Administrator manual](docs/ADMINISTRATOR_MANUAL.md)
-- [Coordinator and student guide](docs/COORDINATOR_STUDENT_GUIDE.md)
-- [Final testing report](docs/FINAL_TESTING_REPORT.md)
-- [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Security audit checklist](docs/SECURITY_AUDIT.md)
+## Environment Variables
 
-## Local setup
+Copy `.env.example` to `.env` for local development. In production (`APP_ENV=production`), `create_app()` enforces a non-default `SECRET_KEY` and a `mysql://` or `mysql+pymysql://` `DATABASE_URL`.
 
-### 1. Create an environment
+| Variable | Description | Example / Default |
+|---|---|---|
+| `FLASK_APP` | Flask entrypoint | `run.py` |
+| `FLASK_ENV` | Flask environment | `development` |
+| `APP_ENV` | App environment (`development` or `production`) | `development` |
+| `SECRET_KEY` | Strong random secret key (32+ chars in production) | *(generate with `secrets.token_urlsafe(48)`)* |
+| `DATABASE_URL` | SQLAlchemy DB URI | `sqlite:///college_events.db` (dev) / `mysql+pymysql://...` (prod) |
+| `SESSION_COOKIE_SECURE` | Set `true` behind HTTPS in production | `false` |
+
+---
+
+## Local Development Setup
+
+### Windows (PowerShell)
 
 ```powershell
-cd college_event_management
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Set `SECRET_KEY` and `DATABASE_URL` in `.env`. The default SQLite URL is used when `DATABASE_URL` is omitted.
-
-### 2. Initialize a database
-
-For MySQL, create a database and account, then set `DATABASE_URL=mysql+pymysql://user:password@localhost:3306/college_events`.
+Edit `.env` if needed (for local SQLite, set `DATABASE_URL=sqlite:///college_events.db`), then initialize the database:
 
 ```powershell
-flask db init
-flask db migrate -m "Initial foundation schema"
 flask db upgrade
 flask init-db
 flask run
 ```
 
-Use `http://127.0.0.1:5000`.
+### macOS / Linux
 
-### 3. Run tests
-
-```powershell
-pytest -q
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+flask db upgrade
+flask init-db
+flask run
 ```
 
-## Docker setup
+Open `http://127.0.0.1:5000`.
 
-```powershell
-$env:MYSQL_PASSWORD="use-a-local-password"
-$env:MYSQL_ROOT_PASSWORD="use-a-root-password"
-$env:SECRET_KEY="use-a-long-random-secret"
-docker compose up --build
+### Optional Demo Data (Local Only)
+
+```bash
+flask seed-demo
 ```
 
-Initialize the database in the web container:
+This seeds idempotent demo accounts (password: `CampusDemo123!`) for `admin@college.edu`, `coordinator@college.edu`, and `student@college.edu`. **Never run `seed-demo` in production.**
 
-```powershell
+For production admin creation, use:
+
+```bash
+flask create-admin
+```
+
+---
+
+## Running Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+---
+
+## Production Deployment
+
+### Option 1: Docker Compose (with MySQL 8)
+
+```bash
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export MYSQL_PASSWORD="strong-db-password"
+export MYSQL_ROOT_PASSWORD="strong-root-password"
+export APP_ENV="production"
+
+docker compose up --build -d
 docker compose exec web flask db upgrade
 docker compose exec web flask init-db
+docker compose exec web flask create-admin
 ```
 
-## Security notes
+Verify health at `/health` (returns `{"status": "ok", "database": "connected"}`). Put Nginx with TLS/HTTPS in front using [deploy/nginx.conf.example](deploy/nginx.conf.example).
 
-- Never commit `.env`.
-- Use a strong random `SECRET_KEY`.
-- Use TLS and secure cookies in production.
-- Run behind a reverse proxy and set `SESSION_COOKIE_SECURE=true`.
+### Option 2: PaaS (Railway / Render / PythonAnywhere)
+
+1. Push the repository to GitHub (`.env`, `instance/`, and `uploads/` are gitignored).
+2. Provision a **MySQL 8** database and attach a persistent volume/disk at `/app/uploads` so posters and certificate PDFs persist across deploys.
+3. Set `FLASK_APP=run.py`, `APP_ENV=production`, `SECRET_KEY`, `DATABASE_URL`, and `SESSION_COOKIE_SECURE=true`.
+4. Run one-time initialization:
+   ```bash
+   flask db upgrade
+   flask init-db
+   flask create-admin
+   ```
+
+> **Note on HTTPS:** Modern browsers require HTTPS (outside `localhost`) for live webcam access (`getUserMedia`) in the coordinator QR scanner and for secure session cookies.
+
+---
+
+## Additional Documentation
+
+- [Production deployment guide](docs/DEPLOYMENT.md)
+- [Database backup and restoration](docs/BACKUP_RESTORE.md)
+- [Administrator manual](docs/ADMINISTRATOR_MANUAL.md)
+- [Coordinator and student guide](docs/COORDINATOR_STUDENT_GUIDE.md)
+- [Security audit checklist](docs/SECURITY_AUDIT.md)
