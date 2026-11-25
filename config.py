@@ -29,8 +29,12 @@ class ProductionConfig(Config):
     WTF_CSRF_ENABLED = True
     DEBUG = False
     TESTING = False
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_pre_ping": True,
-        "pool_recycle": 280,
-    }
+    SQLALCHEMY_ENGINE_OPTIONS = (
+        {}
+        if Config.SQLALCHEMY_DATABASE_URI.startswith("sqlite:")
+        else {
+            "pool_pre_ping": True,
+            "pool_recycle": 280,
+        }
+    )
     SEND_FILE_MAX_AGE_DEFAULT = 86400

@@ -1518,6 +1518,28 @@ def test_compulsory_registration_event_workflow(client, app):
     assert b"All eligible students have registered" in participants_after.data
 
 
+def test_production_config_accepts_sqlite_database_url(monkeypatch, tmp_path):
+    from config import ProductionConfig
+
+    db_uri = f"sqlite:///{tmp_path / 'prod.db'}"
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", db_uri)
+
+    class SqliteProdConfig(ProductionConfig):
+        TESTING = True
+        SECRET_KEY = "a-very-strong-production-secret-key-for-testing"
+        SQLALCHEMY_DATABASE_URI = db_uri
+        SQLALCHEMY_ENGINE_OPTIONS = {}
+
+    prod_app = create_app(SqliteProdConfig)
+    with prod_app.app_context():
+        db.create_all()
+    resp = prod_app.test_client().get("/health")
+    assert resp.status_code == 200
+    assert resp.json == {"status": "ok", "database": "connected"}
+
+
+
 
 
 

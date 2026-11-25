@@ -24,8 +24,8 @@ def create_app(config_class=Config):
     if app.config.get("ENV") == "production" or os.environ.get("APP_ENV") == "production":
         if app.config["SECRET_KEY"].startswith("development-only"):
             raise RuntimeError("SECRET_KEY must be configured in production.")
-        if not os.environ.get("DATABASE_URL", "").startswith(("mysql://", "mysql+pymysql://")):
-            raise RuntimeError("A MySQL DATABASE_URL must be configured in production.")
+        if not os.environ.get("DATABASE_URL", "").startswith(("mysql://", "mysql+pymysql://", "sqlite:///")):
+            raise RuntimeError("A valid DATABASE_URL (mysql or sqlite) must be configured in production.")
 
     db.init_app(app)
     migrate.init_app(app, db)
