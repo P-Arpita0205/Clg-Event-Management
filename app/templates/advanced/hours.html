@@ -1,0 +1,16 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer hours{% endblock %}
+{% block page_title %}Volunteer hours{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  <h1 class="h5">Record volunteer hours</h1>
+  <form method="post" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-4"><label class="form-label">Event</label><select class="form-select" name="event_id" required>{% for event in event_list %}<option value="{{ event.id }}">{{ event.title }}</option>{% endfor %}</select></div>
+    <div class="col-md-4"><label class="form-label">Approved volunteer</label><select class="form-select" name="student_id" required>{% for student in approved_students %}<option value="{{ student.id }}">{{ student.full_name }}</option>{% endfor %}</select></div>
+    <div class="col-md-2"><label class="form-label">Hours</label><input class="form-control" type="number" name="hours" min="0" step="0.25" required></div>
+    <div class="col-md-2"><label class="form-label">Note</label><input class="form-control" name="note"></div>
+    <div class="col-12"><button class="btn btn-primary">Record hours</button></div>
+  </form>
+</article>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event budget{% endblock %}
+{% block page_title %}Event budget{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading"><div><h1>{{ event.title }}</h1><p>Budget and expense tracking</p></div></div>
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h2 class="h5">Budget allocation</h2>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="form_type" value="budget">
+        <label class="form-label">Allocated amount</label>
+        <input class="form-control" type="number" name="allocated_amount" step="0.01" min="0" value="{{ budget.allocated_amount if budget else '' }}" required>
+        <button class="btn btn-primary w-100 mt-3">{{ 'Update budget' if budget else 'Create budget' }}</button>
+      </form>
+      <hr>
+      <div class="d-grid gap-2"><span>Allocated: <strong>{{ budget.allocated_amount if budget else 0 }}</strong></span><span>Spent: <strong>{{ spent }}</strong></span><span>Remaining: <strong>{{ remaining }}</strong></span></div>
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">Add expense</h2>
+      <form method="post" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="form_type" value="expense">
+        <div class="col-md-3"><input class="form-control" name="category" placeholder="Category" required></div>
+        <div class="col-md-3"><input class="form-control" type="date" name="expense_date" required></div>
+        <div class="col-md-2"><input class="form-control" type="number" name="amount" step="0.01" min="0" placeholder="Amount" required></div>
+        <div class="col-md-4 d-flex gap-1"><input class="form-control" name="description" placeholder="Description"><button class="btn btn-primary">Add</button></div>
+      </form>
+      <hr>
+      {% if expenses %}<div class="table-responsive"><table class="table"><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr></thead><tbody>{% for expense in expenses %}<tr><td>{{ expense.expense_date.strftime('%d %b %Y') }}</td><td>{{ expense.category }}</td><td>{{ expense.description or '-' }}</td><td>{{ expense.amount }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-panel"><i class="fa-solid fa-receipt"></i><h2>No expenses</h2></div>{% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

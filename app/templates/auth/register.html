@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Create student account | Campus Connect{% endblock %}
+{% block body %}
+<main class="auth-page">
+  <section class="auth-card auth-card-wide">
+    <a class="auth-brand" href="{{ url_for('main.index') }}">
+      <span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>
+      Campus Connect
+    </a>
+    <h1>Create student account</h1>
+    <p class="subtitle">Submit your official college details. An administrator will review and approve your request before you can sign in.</p>
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="row g-3">
+        <div class="col-md-6">
+          {{ form.full_name.label(class="form-label") }}
+          {{ form.full_name(class="form-control" + (" is-invalid" if form.full_name.errors else ""), placeholder="e.g. Alex Johnson") }}
+          {% for error in form.full_name.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-md-6">
+          {{ form.student_id.label(class="form-label") }}
+          {{ form.student_id(class="form-control" + (" is-invalid" if form.student_id.errors else ""), placeholder="e.g. CSE2026001") }}
+          {% for error in form.student_id.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-md-7">
+          {{ form.email.label(class="form-label") }}
+          {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="you@college.edu") }}
+          {% for error in form.email.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-md-5">
+          {{ form.phone.label(class="form-label") }}
+          {{ form.phone(class="form-control" + (" is-invalid" if form.phone.errors else ""), placeholder="+91 98765 43210") }}
+          {% for error in form.phone.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-12">
+          {{ form.department_id.label(class="form-label") }}
+          {{ form.department_id(class="form-select" + (" is-invalid" if form.department_id.errors else "")) }}
+          {% for error in form.department_id.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-md-6">
+          {{ form.password.label(class="form-label") }}
+          {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Min. 12 characters") }}
+          {% for error in form.password.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-md-6">
+          {{ form.confirm_password.label(class="form-label") }}
+          {{ form.confirm_password(class="form-control" + (" is-invalid" if form.confirm_password.errors else ""), placeholder="Re-enter password") }}
+          {% for error in form.confirm_password.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+        </div>
+      </div>
+      <div class="alert alert-light border mt-4 mb-0 d-flex align-items-start gap-2">
+        <i class="fa-solid fa-shield-halved text-primary mt-1 flex-shrink-0"></i>
+        <div>
+          <strong>Admin approval required.</strong> New accounts are reviewed by an administrator to protect campus event and volunteer records. You'll be notified by email once approved.
+        </div>
+      </div>
+      {{ form.submit(class="btn btn-primary w-100 py-2 mt-3", value="Request account approval") }}
+    </form>
+    <p class="auth-switch">Already approved? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
+  </section>
+</main>
+{% endblock %}

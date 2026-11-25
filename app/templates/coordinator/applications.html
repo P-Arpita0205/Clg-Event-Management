@@ -1,0 +1,63 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer applications{% endblock %}
+{% block page_title %}Volunteer applications{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if application_list %}
+  <div class="table-responsive"><table class="table align-middle">
+    <thead><tr><th>Student</th><th>Event</th><th>Preferred Role</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for application in application_list %}
+      <tr>
+        <td><strong>{{ application.student.full_name }}</strong><div class="small text-secondary">{{ application.student.student_id }}</div></td>
+        <td>{{ application.event.title }}</td>
+        <td>{{ application.preferred_role or 'General Support' }}</td>
+        <td>
+          <span class="badge text-bg-{{ 'success' if application.status == 'approved' else 'danger' if application.status == 'rejected' else 'warning' }}">{{ application.status|title }}</span>
+          {% if application.assignment %}
+          <div class="small text-primary mt-1">Assigned: <strong>{{ application.assignment.volunteer_role }}</strong></div>
+          {% elif application.status == 'approved' %}
+          <div class="small text-secondary mt-1">Not assigned yet</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if application.status == 'pending' %}
+          <div class="d-flex gap-1">
+            <form method="post" action="{{ url_for('events.approve_volunteer', application_id=application.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-success">Approve</button></form>
+            <form method="post" action="{{ url_for('events.reject_volunteer', application_id=application.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Reject</button></form>
+          </div>
+          {% elif application.status == 'approved' %}
+          <div class="d-flex flex-wrap gap-1">
+          <form method="post" action="{{ url_for('events.assign_volunteer', application_id=application.id) }}" class="d-flex gap-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select class="form-select form-select-sm" name="volunteer_role">
+              {% for role in ['Registration Desk','Technical Support','Stage Management','Guest Coordination','Event Photography'] %}
+              <option {{ 'selected' if application.assignment and application.assignment.volunteer_role == role }}>{{ role }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm btn-primary">{{ 'Update' if application.assignment else 'Assign' }}</button>
+          </form>
+          {% if application.assignment %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tasks.manage', event_id=application.event_id) }}">Tasks</a>
+          {% endif %}
+          {% if (application.event_id, application.student_id) in issued_volunteer_cert_keys %}
+          <span class="badge text-bg-success align-self-center">Volunteer cert issued</span>
+          {% elif (application.event_id, application.student_id) not in qr_attended_keys %}
+          <span class="badge text-bg-secondary align-self-center">QR scan required</span>
+          {% elif not application.event.has_ended %}
+          <span class="badge text-bg-warning align-self-center">After event ends</span>
+          {% else %}
+          <form method="post" action="{{ url_for('certificates.issue_volunteer', event_id=application.event_id, student_id=application.student_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success">Volunteer certificate</button></form>
+          {% endif %}
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-panel"><i class="fa-solid fa-user-check"></i><h2>No volunteer applications</h2><p>Applications for your events will appear here.</p></div>
+  {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event description draft{% endblock %}
+{% block page_title %}Description draft{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  <h1 class="h5">Rule-based description draft</h1>
+  <p class="text-secondary">Review and edit this draft; no external AI service was used.</p>
+  <textarea class="form-control" rows="8" id="descriptionDraft">{{ draft }}</textarea>
+  <button class="btn btn-primary mt-3" type="button" onclick="navigator.clipboard.writeText(document.getElementById('descriptionDraft').value)">Copy draft</button>
+</article>
+{% endblock %}

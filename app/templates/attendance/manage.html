@@ -1,0 +1,349 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Attendance | {{ event.title }}{% endblock %}
+{% block page_title %}Attendance{% endblock %}
+{% block dashboard_content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div><h1 class="h4 mb-1">{{ event.title }}</h1><p class="text-secondary mb-0">QR validation and manual fallback</p></div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if event.status == 'published' and not event.has_ended %}
+    <form method="post" action="{{ url_for('events.complete', event_id=event.id) }}" onsubmit="return confirm('Mark this event as ended and issue certificates to QR-checked-in attendees?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-success" type="submit"><i class="fa-solid fa-flag-checkered me-2"></i>End event</button>
+    </form>
+    {% endif %}
+    {% if event.has_ended %}
+    <form method="post" action="{{ url_for('certificates.issue_event', event_id=event.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit"><i class="fa-solid fa-award me-2"></i>Issue eligible certificates</button>
+    </form>
+    {% endif %}
+    <a class="btn btn-outline-primary" href="{{ url_for('attendance.report', event_id=event.id) }}"><i class="fa-solid fa-file-lines me-2"></i>Attendance report</a>
+  </div>
+</div>
+<div class="row g-4">
+  <div class="col-lg-5 d-flex flex-column gap-4">
+    <article class="panel-card">
+      <h2 class="h5"><i class="fa-solid fa-qrcode text-primary me-2"></i>QR code check-in scanner</h2>
+      <p class="small text-secondary">Scan a participant's (<strong>My registrations → QR</strong>) or approved volunteer's (<strong>Volunteering → QR</strong>) QR code using your camera or by uploading a QR image. Only students with scanned QR attendance receive their respective certificates after the event ends.</p>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button type="button" id="start-qr-scanner" class="btn btn-primary">
+          <i class="fa-solid fa-camera me-2"></i>Start camera scanner
+        </button>
+        <button type="button" id="stop-qr-scanner" class="btn btn-outline-secondary d-none">
+          <i class="fa-solid fa-stop me-2"></i>Stop scanner
+        </button>
+        <label for="qr-image-input" class="btn btn-outline-primary mb-0" style="cursor:pointer;">
+          <i class="fa-solid fa-image me-2"></i>Scan QR image
+        </label>
+        <input type="file" id="qr-image-input" accept="image/*" class="d-none">
+      </div>
+      <div
+        id="qr-reader"
+        class="rounded overflow-hidden border mb-3"
+        style="display:none;max-width:100%;"
+        data-scan-url="{{ url_for('attendance.scan', event_id=event.id) }}"
+        data-csrf-token="{{ csrf_token() }}"
+      ></div>
+      <div id="qr-scan-status" class="alert d-none mb-3" role="status"></div>
+      <div class="border-top pt-3 mt-2">
+        <label for="qr-key-input" class="form-label small fw-semibold mb-1">Scanner not working? Enter student's unique key</label>
+        <form id="qr-key-form" method="post" class="d-flex gap-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input id="qr-key-input" class="form-control" name="qr_token" placeholder="e.g. P-1-A4F8C2 or V-2-9E3B10" autocomplete="off" required>
+          <button class="btn btn-outline-primary flex-shrink-0" type="submit">Mark attendance</button>
+        </form>
+      </div>
+    </article>
+    <article class="panel-card">
+      <h2 class="h5">Manual attendance</h2>
+      <p class="small text-secondary">Manual check-in records presence for reporting only and does not qualify for certificates without a scanned QR code.</p>
+      {% if registrations %}
+      <form method="post" class="d-flex gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select class="form-select" name="student_id" required>
+          {% for registration in registrations %}
+          <option value="{{ registration.student_id }}">{{ registration.student.full_name }} — {{ registration.student.student_id }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-primary">Record</button>
+      </form>
+      {% else %}<p class="text-secondary mb-0">No confirmed registrations.</p>{% endif %}
+    </article>
+  </div>
+  <div class="col-lg-7">
+    <article class="panel-card">
+      <h2 class="h5">Checked in</h2>
+      <div id="checked-in-table-wrap" class="table-responsive{% if not records %} d-none{% endif %}"><table class="table align-middle"><thead><tr><th>Student</th><th>Role</th><th>Method</th><th>Time</th><th>Certificate</th></tr></thead><tbody id="checked-in-tbody">
+        {% for record in records %}
+        <tr data-student-id="{{ record.student_id }}">
+          <td>{{ record.student.full_name }}</td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              {% if record.student_id in participant_ids %}<span class="badge text-bg-primary">Participant</span>{% endif %}
+              {% if record.student_id in volunteer_ids %}<span class="badge text-bg-info">Volunteer</span>{% endif %}
+            </div>
+          </td>
+          <td>
+            {% if record.method == 'qr' %}
+            <span class="badge text-bg-success">QR</span>
+            {% else %}
+            <span class="badge text-bg-secondary">{{ record.method|title }}</span>
+            {% endif %}
+          </td>
+          <td>{{ record.checked_in_at.strftime('%d %b, %I:%M %p') }}</td>
+          <td>
+            {% if record.method != 'qr' %}
+              <span class="badge text-bg-secondary">QR scan required</span>
+            {% elif not event.has_ended %}
+              <span class="badge text-bg-warning">After event ends</span>
+            {% else %}
+              <div class="d-flex flex-wrap gap-1">
+                {% if record.student_id in participant_ids %}
+                  {% if (record.student_id, 'participation') in issued_certs %}
+                    <span class="badge text-bg-success">Participation issued</span>
+                  {% else %}
+                    <form method="post" action="{{ url_for('certificates.issue_participant', event_id=event.id, student_id=record.student_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary">Participation cert</button></form>
+                  {% endif %}
+                {% endif %}
+                {% if record.student_id in volunteer_ids %}
+                  {% if (record.student_id, 'volunteer') in issued_certs %}
+                    <span class="badge text-bg-success">Volunteer issued</span>
+                  {% else %}
+                    <form method="post" action="{{ url_for('certificates.issue_volunteer', event_id=event.id, student_id=record.student_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-success">Volunteer cert</button></form>
+                  {% endif %}
+                {% endif %}
+              </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody></table></div>
+      <div id="checked-in-empty" class="empty-panel{% if records %} d-none{% endif %}"><i class="fa-solid fa-qrcode"></i><h2>No attendance yet</h2></div>
+    </article>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+(() => {
+  const readerEl = document.getElementById("qr-reader");
+  const startBtn = document.getElementById("start-qr-scanner");
+  const stopBtn = document.getElementById("stop-qr-scanner");
+  const imageInput = document.getElementById("qr-image-input");
+  const keyForm = document.getElementById("qr-key-form");
+  const keyInput = document.getElementById("qr-key-input");
+  const statusEl = document.getElementById("qr-scan-status");
+  const tableWrap = document.getElementById("checked-in-table-wrap");
+  const tbody = document.getElementById("checked-in-tbody");
+  const emptyEl = document.getElementById("checked-in-empty");
+
+  if (!readerEl || !startBtn || !stopBtn) return;
+
+  const scanUrl = readerEl.dataset.scanUrl;
+  const csrfToken = readerEl.dataset.csrfToken;
+  let html5QrCode = null;
+  let isScanning = false;
+  let isSubmitting = false;
+  let lastDecodedText = "";
+  let lastDecodedAt = 0;
+
+  function showStatus(kind, heading, detail) {
+    statusEl.className = "alert mb-3 alert-" + kind;
+    statusEl.replaceChildren();
+    const strong = document.createElement("strong");
+    strong.textContent = heading;
+    statusEl.appendChild(strong);
+    if (detail) {
+      const span = document.createElement("span");
+      span.textContent = " — " + detail;
+      statusEl.appendChild(span);
+    }
+  }
+
+  function makeBadge(text, bgClass) {
+    const badge = document.createElement("span");
+    badge.className = "badge " + bgClass;
+    badge.textContent = text;
+    return badge;
+  }
+
+  function upsertAttendanceRow(data) {
+    if (!data.student_id || !tbody) return;
+    if (emptyEl) emptyEl.classList.add("d-none");
+    if (tableWrap) tableWrap.classList.remove("d-none");
+
+    let row = tbody.querySelector('tr[data-student-id="' + data.student_id + '"]');
+    if (!row) {
+      row = document.createElement("tr");
+      row.dataset.studentId = String(data.student_id);
+      for (let i = 0; i < 5; i++) row.appendChild(document.createElement("td"));
+      tbody.prepend(row);
+    }
+    const cells = row.children;
+    cells[0].textContent = data.student_name || "Student";
+
+    const rolesDiv = document.createElement("div");
+    rolesDiv.className = "d-flex flex-wrap gap-1";
+    (data.roles || []).forEach((role) => {
+      rolesDiv.appendChild(
+        makeBadge(role, role === "Volunteer" ? "text-bg-info" : "text-bg-primary")
+      );
+    });
+    cells[1].replaceChildren(rolesDiv);
+
+    cells[2].replaceChildren(makeBadge("QR", "text-bg-success"));
+    cells[3].textContent = data.checked_in_at || "Just now";
+
+    const certWrap = document.createElement("div");
+    certWrap.className = "d-flex flex-wrap gap-1";
+    if (!data.event_has_ended) {
+      certWrap.appendChild(makeBadge("After event ends", "text-bg-warning"));
+    } else if ((data.issued_types || []).length > 0) {
+      data.issued_types.forEach((certType) => {
+        const label = certType === "volunteer" ? "Volunteer issued" : "Participation issued";
+        certWrap.appendChild(makeBadge(label, "text-bg-success"));
+      });
+    } else {
+      certWrap.appendChild(makeBadge("QR verified", "text-bg-success"));
+    }
+    cells[4].replaceChildren(certWrap);
+  }
+
+  async function submitQrToken(decodedText) {
+    if (isSubmitting) return;
+    isSubmitting = true;
+    try {
+      const response = await fetch(scanUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        body: JSON.stringify({ qr_token: decodedText }),
+      });
+      if (!response.ok) {
+        showStatus("danger", "Scan failed", "Server returned status " + response.status + ".");
+        return;
+      }
+      const data = await response.json();
+      if (!data.valid) {
+        showStatus("danger", "Invalid QR or key", data.message || "Could not validate QR code or unique key.");
+        return false;
+      }
+      const roleLabel = (data.roles || []).join(" & ");
+      const who = data.student_name ? data.student_name + (roleLabel ? " (" + roleLabel + ")" : "") : "";
+      if (data.duplicate) {
+        showStatus("warning", "Already checked in", who ? who + " — " + data.message : data.message);
+      } else {
+        showStatus("success", data.message || "Attendance recorded", who);
+      }
+      upsertAttendanceRow(data);
+      return true;
+    } catch (err) {
+      showStatus("danger", "Network error", "Could not submit scanned QR code.");
+      return false;
+    } finally {
+      isSubmitting = false;
+    }
+  }
+
+  async function stopScanner() {
+    if (html5QrCode && isScanning) {
+      try {
+        await html5QrCode.stop();
+      } catch (_) {}
+    }
+    isScanning = false;
+    readerEl.style.display = "none";
+    startBtn.classList.remove("d-none");
+    stopBtn.classList.add("d-none");
+  }
+
+  async function startScanner() {
+    if (typeof Html5Qrcode === "undefined") {
+      showStatus("danger", "Scanner unavailable", "QR scanner library failed to load. Use manual token entry below.");
+      return;
+    }
+    if (isScanning) return;
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode("qr-reader");
+    }
+    readerEl.style.display = "block";
+    startBtn.classList.add("d-none");
+    stopBtn.classList.remove("d-none");
+    showStatus("info", "Starting camera", "Point the camera at a student's attendance QR code.");
+
+    const config = { fps: 10, qrbox: { width: 240, height: 240 } };
+    const onSuccess = (decodedText) => {
+      const now = Date.now();
+      if (decodedText === lastDecodedText && now - lastDecodedAt < 2500) {
+        return;
+      }
+      lastDecodedText = decodedText;
+      lastDecodedAt = now;
+      submitQrToken(decodedText);
+    };
+
+    try {
+      const cameras = await Html5Qrcode.getCameras();
+      if (!cameras || cameras.length === 0) {
+        await stopScanner();
+        showStatus("warning", "No camera found", "Connect a camera or use 'Scan QR image' instead.");
+        return;
+      }
+      const backCamera = cameras.find((cam) => /back|rear|environment/i.test(cam.label || ""));
+      const cameraConfig = backCamera ? backCamera.id : { facingMode: "environment" };
+      try {
+        await html5QrCode.start(cameraConfig, config, onSuccess, () => {});
+      } catch (_) {
+        await html5QrCode.start(cameras[0].id, config, onSuccess, () => {});
+      }
+      isScanning = true;
+      showStatus("info", "Scanner ready", "Hold the student's QR code steady inside the frame.");
+    } catch (err) {
+      await stopScanner();
+      showStatus("danger", "Camera access blocked", "Allow camera permission in your browser or use 'Scan QR image'.");
+    }
+  }
+
+  startBtn.addEventListener("click", startScanner);
+  stopBtn.addEventListener("click", stopScanner);
+
+  if (keyForm && keyInput) {
+    keyForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const value = keyInput.value.trim();
+      if (!value) return;
+      const ok = await submitQrToken(value);
+      if (ok) {
+        keyInput.value = "";
+      }
+    });
+  }
+
+  if (imageInput) {
+    imageInput.addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      if (typeof Html5Qrcode === "undefined") {
+        showStatus("danger", "Scanner unavailable", "QR scanner library failed to load.");
+        return;
+      }
+      await stopScanner();
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+      }
+      try {
+        const decodedText = await html5QrCode.scanFile(file, false);
+        await submitQrToken(decodedText);
+      } catch (_) {
+        showStatus("danger", "No QR code found", "Could not detect a valid QR code in that image.");
+      } finally {
+        imageInput.value = "";
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

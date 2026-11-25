@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Browse events | Campus Connect{% endblock %}
+{% block body %}
+<nav class="navbar navbar-expand-lg public-nav sticky-top">
+  <div class="container">
+    <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
+      <span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>
+      Campus Connect
+    </a>
+    <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-outline-primary" href="{{ url_for('community.calendar_view') }}"><i class="fa-solid fa-calendar me-2"></i>Calendar</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('advanced.leaderboard') }}"><i class="fa-solid fa-trophy me-2"></i>Leaderboard</a>
+      <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Sign in</a>
+    </div>
+  </div>
+</nav>
+<main class="section">
+  <div class="container">
+    {% include "events/_browse_content.html" %}
+  </div>
+</main>
+{% endblock %}

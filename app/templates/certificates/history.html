@@ -1,0 +1,55 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Certificates{% endblock %}
+{% block page_title %}Certificates{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div>
+    <h1>Certificate history</h1>
+    <p>
+      {% if current_user.role_name == 'admin' %}
+        All issued and verifiable campus certificates.
+      {% elif current_user.role_name == 'coordinator' %}
+        Certificates issued for your events and your coordination.
+      {% else %}
+        Your issued and verifiable certificates.
+      {% endif %}
+    </p>
+  </div>
+</div>
+<article class="panel-card">
+  {% if items %}
+  <div class="table-responsive"><table class="table align-middle">
+    <thead>
+      <tr>
+        <th>Certificate</th>
+        {% if current_user.role_name in ('admin', 'coordinator') %}<th>Recipient</th>{% endif %}
+        <th>Event</th>
+        <th>Type</th>
+        <th>Issued</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td><strong>{{ item.certificate_id }}</strong></td>
+        {% if current_user.role_name in ('admin', 'coordinator') %}
+        <td>
+          <strong>{{ item.recipient.full_name }}</strong>
+          <div class="small text-secondary">{{ item.recipient.email }}</div>
+        </td>
+        {% endif %}
+        <td>{{ item.event.title }}</td>
+        <td>{{ item.certificate_type|title }}</td>
+        <td>{{ item.issue_date.strftime('%d %b %Y') }}</td>
+        <td class="d-flex gap-1">
+          <a class="btn btn-sm btn-primary" href="{{ url_for('certificates.download', certificate_id=item.id) }}">Download PDF</a>
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('certificates.verify', certificate_id=item.certificate_id) }}">Verify</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-award"></i><h2>No certificates available</h2><p>Certificates are automatically issued after an event ends to participants and volunteers whose QR code attendance was scanned.</p></div>{% endif %}
+</article>
+{% endblock %}

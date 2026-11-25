@@ -1,0 +1,36 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event recommendations{% endblock %}
+{% block page_title %}Recommendations{% endblock %}
+{% block dashboard_content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h1 class="h5">Recommended for you</h1>
+      <p class="text-secondary">Suggestions based on your interests, department, and participation history.</p>
+      {% if recommendations %}
+      <div class="row g-3">
+        {% for event in recommendations %}
+        <div class="col-md-6"><div class="feature-card h-100"><span class="badge text-bg-primary">{{ event.category.name }}</span><h2 class="h6 mt-3">{{ event.title }}</h2><p class="text-secondary mb-2">{{ event.event_date.strftime('%d %b %Y') }} · {{ event.venue }}</p><a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=event.id) }}">View event</a></div></div>
+        {% endfor %}
+      </div>
+      {% else %}<div class="empty-panel"><i class="fa-solid fa-compass"></i><h2>No recommendations yet</h2><p>Publish an interest or participate in more events.</p></div>{% endif %}
+    </article>
+  </div>
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h2 class="h5">My interests</h2>
+      <form method="post" action="{{ url_for('assistance.save_interests') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% set selected_ids = interests|map(attribute='category_id')|list %}
+        {% for category in categories %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="category_ids" value="{{ category.id }}" id="interest{{ category.id }}" {{ 'checked' if category.id in selected_ids }}>
+          <label class="form-check-label" for="interest{{ category.id }}">{{ category.name }}</label>
+        </div>
+        {% endfor %}
+        <button class="btn btn-primary w-100 mt-3">Update interests</button>
+      </form>
+    </article>
+  </div>
+</div>
+{% endblock %}

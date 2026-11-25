@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Page not found | Campus Connect{% endblock %}
+{% block body %}
+<main class="error-page">
+  <section class="auth-card text-center">
+    <div class="error-code">4<span>0</span>4</div>
+    <h1 class="mt-3 h3 fw-bold text-navy">Page not found</h1>
+    <p class="text-secondary mb-4">The requested page or campus resource could not be found.</p>
+    <a class="btn btn-primary" href="{{ url_for('main.index') }}"><i class="fa-solid fa-house me-2"></i>Return home</a>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Clubs{% endblock %}
+{% block page_title %}Clubs{% endblock %}
+{% block dashboard_content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h1 class="h5">Create club</h1>
+      <form method="post" action="{{ url_for('community.create_club') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Club name</label>
+        <input class="form-control" name="name" maxlength="100" required>
+        <label class="form-label mt-3">Description</label>
+        <textarea class="form-control" name="description" rows="4"></textarea>
+        <button class="btn btn-primary w-100 mt-3">Create club</button>
+      </form>
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">College clubs</h2>
+      {% if items %}
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Club</th><th>Description</th><th>Status</th><th></th></tr></thead><tbody>
+        {% for item in items %}<tr><td><strong>{{ item.name }}</strong></td><td>{{ item.description or 'No description' }}</td><td><span class="badge text-bg-{{ 'success' if item.is_active else 'secondary' }}">{{ 'Active' if item.is_active else 'Inactive' }}</span></td><td><form method="post" action="{{ url_for('community.toggle_club', club_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary">{{ 'Deactivate' if item.is_active else 'Activate' }}</button></form></td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="empty-panel"><i class="fa-solid fa-users"></i><h2>No clubs</h2></div>{% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

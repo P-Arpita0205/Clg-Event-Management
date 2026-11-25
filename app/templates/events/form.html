@@ -1,0 +1,98 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}{{ 'Edit event' if event else 'Create event' }}{% endblock %}
+{% block page_title %}{{ 'Edit event' if event else 'Create event' }}{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if form.errors %}
+  <div class="alert alert-danger mb-4">
+    <strong><i class="fa-solid fa-triangle-exclamation me-2"></i>Could not save event.</strong> Please check the highlighted fields below.
+  </div>
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="row g-3">
+      <div class="col-md-8">
+        {{ form.title.label(class="form-label") }}
+        {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else ""), placeholder="e.g. Annual Tech Symposium") }}
+        {% for e in form.title.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-4">
+        {{ form.category_id.label(class="form-label") }}
+        {{ form.category_id(class="form-select" + (" is-invalid" if form.category_id.errors else "")) }}
+        {% for e in form.category_id.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-12">
+        {{ form.description.label(class="form-label") }}
+        {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""), rows="5", placeholder="Describe the event (at least 20 characters)") }}
+        {% for e in form.description.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.department_id.label(class="form-label") }}
+        {{ form.department_id(class="form-select" + (" is-invalid" if form.department_id.errors else "")) }}
+        {% for e in form.department_id.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.club_id.label(class="form-label") }}
+        {{ form.club_id(class="form-select" + (" is-invalid" if form.club_id.errors else "")) }}
+        {% for e in form.club_id.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.venue.label(class="form-label") }}
+        {{ form.venue(class="form-control" + (" is-invalid" if form.venue.errors else ""), placeholder="e.g. Main Auditorium") }}
+        {% for e in form.venue.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.organizer.label(class="form-label") }}
+        {{ form.organizer(class="form-control" + (" is-invalid" if form.organizer.errors else ""), placeholder="e.g. Computer Science Department") }}
+        {% for e in form.organizer.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-3">
+        {{ form.event_date.label(class="form-label") }}
+        {{ form.event_date(class="form-control" + (" is-invalid" if form.event_date.errors else ""), type="date") }}
+        {% for e in form.event_date.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-3">
+        {{ form.end_date.label(class="form-label") }}
+        {{ form.end_date(class="form-control" + (" is-invalid" if form.end_date.errors else ""), type="date") }}
+        {% for e in form.end_date.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-3">
+        {{ form.start_time.label(class="form-label") }}
+        {{ form.start_time(class="form-control" + (" is-invalid" if form.start_time.errors else ""), type="time") }}
+        {% for e in form.start_time.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-3">
+        {{ form.end_time.label(class="form-label") }}
+        {{ form.end_time(class="form-control" + (" is-invalid" if form.end_time.errors else ""), type="time") }}
+        {% for e in form.end_time.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.registration_deadline.label(class="form-label") }}
+        {{ form.registration_deadline(class="form-control" + (" is-invalid" if form.registration_deadline.errors else ""), type="datetime-local") }}
+        {% for e in form.registration_deadline.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ form.volunteer_requirement.label(class="form-label") }}
+        {{ form.volunteer_requirement(class="form-control" + (" is-invalid" if form.volunteer_requirement.errors else ""), min="0") }}
+        {% for e in form.volunteer_requirement.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-12">
+        <div class="form-check form-switch p-3 border rounded bg-light-subtle">
+          {{ form.registration_compulsory(class="form-check-input ms-0 me-2", role="switch") }}
+          {{ form.registration_compulsory.label(class="form-check-label fw-semibold") }}
+          <div class="small text-secondary mt-1">Eligible students are notified that registration is compulsory, prompted to register on their dashboard, and cannot cancel once registered.</div>
+        </div>
+      </div>
+      <div class="col-12">
+        {{ form.poster.label(class="form-label") }}
+        {{ form.poster(class="form-control" + (" is-invalid" if form.poster.errors else "")) }}
+        {% for e in form.poster.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+    </div>
+    <div class="d-flex gap-2 mt-4">
+      {{ form.submit(class="btn btn-primary") }}
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.events') if current_user.role_name == 'admin' else url_for('coordinator.events') }}">Cancel</a>
+    </div>
+  </form>
+</article>
+{% endblock %}

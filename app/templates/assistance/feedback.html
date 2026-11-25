@@ -1,0 +1,16 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Feedback analysis{% endblock %}
+{% block page_title %}Feedback analysis{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if event %}
+  <h1 class="h4">{{ event.title }}</h1>
+  <p class="text-secondary">{{ response_count }} responses · {{ average if average is not none else 'No ratings' }}{{ '/5 average' if average is not none }}</p>
+  {% if themes %}
+  <div class="table-responsive"><table class="table"><thead><tr><th>Detected theme</th><th>Feedback count</th></tr></thead><tbody>{% for theme, count in themes %}<tr><td>{{ theme }}</td><td>{{ count }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-magnifying-glass-chart"></i><h2>No themes detected</h2><p>More written suggestions are needed.</p></div>{% endif %}
+  {% else %}
+  <div class="empty-panel"><i class="fa-solid fa-lock"></i><h2>Event unavailable</h2></div>
+  {% endif %}
+</article>
+{% endblock %}

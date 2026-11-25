@@ -1,0 +1,96 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer tasks{% endblock %}
+{% block page_title %}Volunteer tasks{% endblock %}
+{% block dashboard_content %}
+{% set time_slots = [
+  ('06:00', '06:00 AM'), ('06:30', '06:30 AM'),
+  ('07:00', '07:00 AM'), ('07:30', '07:30 AM'),
+  ('08:00', '08:00 AM'), ('08:30', '08:30 AM'),
+  ('09:00', '09:00 AM'), ('09:30', '09:30 AM'),
+  ('10:00', '10:00 AM'), ('10:30', '10:30 AM'),
+  ('11:00', '11:00 AM'), ('11:30', '11:30 AM'),
+  ('12:00', '12:00 PM'), ('12:30', '12:30 PM'),
+  ('13:00', '01:00 PM'), ('13:30', '01:30 PM'),
+  ('14:00', '02:00 PM'), ('14:30', '02:30 PM'),
+  ('15:00', '03:00 PM'), ('15:30', '03:30 PM'),
+  ('16:00', '04:00 PM'), ('16:30', '04:30 PM'),
+  ('17:00', '05:00 PM'), ('17:30', '05:30 PM'),
+  ('18:00', '06:00 PM'), ('18:30', '06:30 PM'),
+  ('19:00', '07:00 PM'), ('19:30', '07:30 PM'),
+  ('20:00', '08:00 PM'), ('20:30', '08:30 PM'),
+  ('21:00', '09:00 PM'), ('21:30', '09:30 PM'),
+  ('22:00', '10:00 PM'), ('22:30', '10:30 PM'),
+  ('23:00', '11:00 PM'), ('23:30', '11:30 PM')
+] %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h1 class="h5">Assign task</h1>
+      <p class="text-secondary">{{ event.title }}</p>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Volunteer</label>
+        <select class="form-select" name="assignment_id" required>
+          {% for assignment in assignments %}
+          <option value="{{ assignment.id }}">{{ assignment.application.student.full_name }} — {{ assignment.volunteer_role }}</option>
+          {% else %}<option value="">No approved volunteers</option>{% endfor %}
+        </select>
+        <label class="form-label mt-3">Title</label>
+        <input class="form-control" name="title" maxlength="160" required>
+        <label class="form-label mt-3">Description</label>
+        <textarea class="form-control" name="description" rows="3"></textarea>
+        <div class="row g-2 mt-2">
+          <div class="col-sm-6">
+            <label class="form-label">Deadline date</label>
+            <input class="form-control" type="date" name="deadline_date">
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label">Time</label>
+            <select class="form-select" name="deadline_time">
+              {% for val, label in time_slots %}
+              <option value="{{ val }}" {{ 'selected' if val == '18:00' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100 mt-3">Assign task</button>
+      </form>
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">Task progress</h2>
+      {% if task_list %}
+      <div class="table-responsive"><table class="table align-middle">
+        <thead><tr><th>Task</th><th>Volunteer</th><th>Deadline</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for task in task_list %}
+          {% set current_time = task.deadline.strftime('%H:%M') if task.deadline else '' %}
+          <tr>
+            <td><strong>{{ task.title }}</strong></td>
+            <td>{{ task.assignment.application.student.full_name }}</td>
+            <td>
+              <form method="post" action="{{ url_for('tasks.update_deadline', task_id=task.id) }}" class="d-flex flex-wrap gap-1 align-items-center">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input class="form-control form-control-sm" style="width:auto" type="date" name="deadline_date" value="{{ task.deadline.strftime('%Y-%m-%d') if task.deadline else '' }}">
+                <select class="form-select form-select-sm" style="width:auto" name="deadline_time">
+                  {% if current_time and current_time not in (time_slots | map(attribute=0) | list) %}
+                  <option value="{{ current_time }}" selected>{{ task.deadline.strftime('%I:%M %p') }}</option>
+                  {% endif %}
+                  {% for val, label in time_slots %}
+                  <option value="{{ val }}" {{ 'selected' if val == current_time }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Save</button>
+              </form>
+            </td>
+            <td><span class="badge text-bg-{{ 'success' if task.status == 'completed' else 'info' if task.status == 'in_progress' else 'warning' }}">{{ task.status|replace('_',' ')|title }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}<div class="empty-panel"><i class="fa-solid fa-list-check"></i><h2>No tasks assigned</h2></div>{% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

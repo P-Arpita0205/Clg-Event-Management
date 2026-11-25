@@ -1,0 +1,43 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event approvals & management{% endblock %}
+{% block page_title %}Event approvals & management{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div><h1>Event approvals &amp; management</h1><p>Create events, oversee registrations, or review coordinator submissions before publication.</p></div>
+  <a class="btn btn-primary" href="{{ url_for('events.create') }}"><i class="fa-solid fa-plus me-2"></i>Create event</a>
+</div>
+<article class="panel-card">
+  {% if event_list %}
+  <div class="table-responsive"><table class="table align-middle">
+    <thead><tr><th>Event</th><th>Coordinator</th><th>Date</th><th>Registrations</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for event in event_list %}
+      <tr>
+        <td><strong>{{ event.title }}</strong>{% if event.registration_compulsory %} <span class="badge text-bg-danger ms-1">Compulsory</span>{% endif %}<div class="small text-secondary">{{ event.category.name }}</div></td>
+        <td>{{ event.coordinator.full_name }}</td>
+        <td>{{ event.event_date.strftime('%d %b %Y') }}</td>
+        <td>{{ event.approved_registration_count }}{% if event.capacity < 100000 %} / {{ event.capacity }}{% endif %}</td>
+        <td><span class="badge text-bg-{{ 'success' if event.status == 'published' else 'info' if event.status == 'completed' else 'warning' if event.status in ['draft','pending'] else 'secondary' }}">{{ event.status|title }}</span></td>
+        <td>
+          <div class="d-flex flex-wrap gap-1">
+            {% if event.status == 'draft' %}
+            <form method="post" action="{{ url_for('events.approve', event_id=event.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-success">Approve</button></form>
+            <form method="post" action="{{ url_for('events.reject', event_id=event.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Reject</button></form>
+            {% endif %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=event.id) }}">View</a>
+            <a class="btn btn-sm btn-outline-info" href="{{ url_for('events.participants', event_id=event.id) }}">Participants</a>
+            <a class="btn btn-sm btn-outline-success" href="{{ url_for('attendance.manage', event_id=event.id) }}">Attendance</a>
+            {% if event.status == 'published' %}
+            <form method="post" action="{{ url_for('events.complete', event_id=event.id) }}" onsubmit="return confirm('Mark this event as ended and issue certificates?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary">End event</button></form>
+            {% endif %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('events.edit', event_id=event.id) }}">Edit</a>
+            <form method="post" action="{{ url_for('events.delete', event_id=event.id) }}" onsubmit="return confirm('Permanently delete this event?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Delete</button></form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-calendar-check"></i><h2>No event submissions</h2></div>{% endif %}
+</article>
+{% endblock %}

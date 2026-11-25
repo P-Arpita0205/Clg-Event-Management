@@ -1,0 +1,84 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Resources{% endblock %}
+{% block page_title %}Resources{% endblock %}
+{% block dashboard_content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h1 class="h5">Create resource</h1>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Name</label>
+        <input class="form-control" name="name" required placeholder="e.g. Seminar Hall 3">
+        <label class="form-label mt-3">Type</label>
+        <select class="form-select" name="resource_type">
+          <option>Classroom</option>
+          <option>Seminar Hall</option>
+          <option>Auditorium</option>
+          <option>Laboratory</option>
+          <option>Conference Room</option>
+          <option>Sports Facility</option>
+          <option>Other</option>
+        </select>
+        <label class="form-label mt-3">Location</label>
+        <input class="form-control" name="location" placeholder="e.g. Block A, Ground Floor">
+        <label class="form-label mt-3">Capacity</label>
+        <input class="form-control" type="number" name="capacity" min="1" placeholder="e.g. 100">
+        <button class="btn btn-primary w-100 mt-3">
+          <i class="fa-solid fa-plus me-1"></i>Create resource
+        </button>
+      </form>
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">Campus resources</h2>
+      {% if items %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Location</th>
+              <th>Capacity</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td><strong>{{ item.name }}</strong></td>
+              <td>{{ item.resource_type }}</td>
+              <td>{{ item.location or '—' }}</td>
+              <td>{{ item.capacity or '—' }}</td>
+              <td>
+                <span class="badge {% if item.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                  {{ 'Active' if item.is_active else 'Inactive' }}
+                </span>
+              </td>
+              <td>
+                <form method="post" action="{{ url_for('advanced.toggle_resource', resource_id=item.id) }}" style="display:inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm {% if item.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                    {{ 'Deactivate' if item.is_active else 'Activate' }}
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-panel">
+        <i class="fa-solid fa-building"></i>
+        <h2>No resources yet</h2>
+        <p class="text-muted">Use the form on the left to add campus resources like halls, labs, and classrooms.</p>
+      </div>
+      {% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}My registrations{% endblock %}
+{% block page_title %}My registrations{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if registration_list %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Event</th><th>Date</th><th>Venue</th><th>Status</th><th>QR code &amp; unique key</th><th></th></tr></thead><tbody>
+    {% for registration in registration_list %}
+    <tr>
+      <td><strong>{{ registration.event.title }}</strong>{% if registration.event.registration_compulsory %} <span class="badge text-bg-danger ms-1">Compulsory</span>{% endif %}</td>
+      <td>{{ registration.event.event_date.strftime('%d %b %Y') }}</td>
+      <td>{{ registration.event.venue }}</td>
+      <td><span class="badge text-bg-success">{{ registration.status|title }}</span></td>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          <img src="{{ url_for('attendance.qr', registration_id=registration.id) }}" alt="Attendance QR for {{ registration.event.title }}" width="84" height="84" class="border rounded bg-white p-1">
+          <div>
+            <div class="small text-secondary">Unique key</div>
+            <code class="d-inline-block px-2 py-1 bg-light border rounded">{{ registration.attendance_key }}</code>
+            <div class="mt-1 d-flex gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-key="{{ registration.attendance_key }}">Copy</button>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('attendance.qr', registration_id=registration.id) }}" target="_blank">Open QR</a>
+            </div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=registration.event.id) }}">View</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-ticket"></i><h2>No registrations</h2><p>Browse upcoming events and register for campus activities.</p><a class="btn btn-primary mt-2" href="{{ url_for('events.browse') }}">Browse events</a></div>{% endif %}
+</article>
+{% endblock %}

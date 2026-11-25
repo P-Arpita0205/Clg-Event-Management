@@ -1,0 +1,11 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}My volunteer hours{% endblock %}
+{% block page_title %}My volunteer hours{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  <div class="dashboard-heading"><div><h1>Volunteer history</h1><p>Verified service hours</p></div><div class="stat-card" style="height:auto"><div><span>Total hours</span><strong>{{ total }}</strong></div></div></div>
+  {% if items %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Event</th><th>Hours</th><th>Note</th><th>Recorded</th></tr></thead><tbody>{% for item in items %}<tr><td>{{ item.event.title }}</td><td><strong>{{ item.hours }}</strong></td><td>{{ item.note or '-' }}</td><td>{{ item.recorded_at.strftime('%d %b %Y') }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-clock"></i><h2>No volunteer hours yet</h2></div>{% endif %}
+</article>
+{% endblock %}

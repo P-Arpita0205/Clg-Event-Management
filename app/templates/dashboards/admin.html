@@ -1,0 +1,128 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Admin dashboard | Campus Connect{% endblock %}
+{% block page_title %}Administration overview{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div>
+    <h1>Good to see you, {{ current_user.full_name.split()[0] }} 👋</h1>
+    <p>Monitor college events, students, and campus operations.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-primary" href="{{ url_for('admin.events') }}"><i class="fa-solid fa-calendar-check me-2"></i>Review events</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('admin.students') }}"><i class="fa-solid fa-users me-2"></i>Manage students</a>
+    <a class="btn btn-primary" href="{{ url_for('events.create') }}"><i class="fa-solid fa-plus me-2"></i>Create event</a>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+  {% set cards = [
+    ('students',         'Total students',    'fa-users',              'primary'),
+    ('events',           'Total events',      'fa-calendar-days',      'info'),
+    ('upcoming_events',  'Upcoming events',   'fa-clock',              'success'),
+    ('volunteers',       'Volunteers',        'fa-hand-holding-heart', 'warning'),
+    ('pending_approvals','Pending approvals', 'fa-hourglass-half',     'danger'),
+    ('departments',      'Departments',       'fa-building-columns',   'teal')
+  ] %}
+  {% for key, label, icon, color in cards %}
+  <div class="col-sm-6 col-xl-4">
+    <article class="stat-card">
+      <div class="stat-icon {{ color }}"><i class="fa-solid {{ icon }}"></i></div>
+      <div>
+        <span>{{ label }}</span>
+        <strong>{{ stats[key] }}</strong>
+      </div>
+    </article>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Charts row 1 -->
+<div class="row g-4 mb-4">
+  <div class="col-xl-8">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Enrollment</span>
+          <h2>Department participation</h2>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="departmentChart"
+          data-labels='{{ department_labels | tojson }}'
+          data-values='{{ department_counts | tojson }}'></canvas>
+      </div>
+    </article>
+  </div>
+  <div class="col-xl-4">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Quick actions</span>
+          <h2>Administration</h2>
+        </div>
+      </div>
+      <div class="action-list">
+        <a href="{{ url_for('admin.students') }}">
+          <span><i class="fa-solid fa-user-plus"></i>Approve student accounts</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('admin.events') }}">
+          <span><i class="fa-solid fa-calendar-check"></i>Review event submissions</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('community.departments') }}">
+          <span><i class="fa-solid fa-building-columns"></i>Manage departments</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('community.clubs') }}">
+          <span><i class="fa-solid fa-users-rectangle"></i>Manage clubs</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('advanced.resources') }}">
+          <span><i class="fa-solid fa-building"></i>Campus resources</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('analytics.admin_analytics') }}">
+          <span><i class="fa-solid fa-chart-line"></i>Full analytics report</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+
+<!-- Charts row 2 -->
+<div class="row g-4">
+  <div class="col-lg-7">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Category mix</span>
+          <h2>Events by category</h2>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="categoryChart"
+          data-labels='{{ category_labels | tojson }}'
+          data-values='{{ category_counts | tojson }}'></canvas>
+      </div>
+    </article>
+  </div>
+  <div class="col-lg-5">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Lifecycle</span>
+          <h2>Events by status</h2>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="statusChart"
+          data-labels='{{ status_labels | tojson }}'
+          data-values='{{ status_counts | tojson }}'></canvas>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock %}

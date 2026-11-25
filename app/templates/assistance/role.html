@@ -1,0 +1,13 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer role recommendation{% endblock %}
+{% block page_title %}Volunteer role{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if event %}
+  <h1 class="h4">Recommended role for {{ event.title }}</h1>
+  <div class="feature-card mt-3"><span class="text-secondary">Suggested role</span><h2 class="h3 mt-2">{{ role }}</h2>{% for reason in reasons %}<p class="mb-1">{{ reason }}</p>{% endfor %}</div>
+  {% else %}
+  <div class="empty-panel"><i class="fa-solid fa-user-question"></i><h2>Event not found</h2></div>
+  {% endif %}
+</article>
+{% endblock %}

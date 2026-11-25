@@ -1,0 +1,170 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Student dashboard | Campus Connect{% endblock %}
+{% block page_title %}Student overview{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div>
+    <h1>Welcome, {{ user.full_name.split()[0] }}</h1>
+    <p>Your campus events, tasks, and achievements at a glance.</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('events.browse') }}">
+    <i class="fa-solid fa-calendar-days me-2"></i>Browse events
+  </a>
+</div>
+
+{% if pending_compulsory_events %}
+<article class="panel-card border-danger-subtle bg-danger-subtle mb-4">
+  <div class="d-flex align-items-center gap-2 mb-2 text-danger">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <h2 class="h5 mb-0 fw-bold">Compulsory registrations required</h2>
+  </div>
+  <p class="small text-secondary mb-3">You must register for the following compulsory event(s) before their registration deadline.</p>
+  <div class="d-flex flex-column gap-2">
+    {% for event in pending_compulsory_events %}
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 p-3 rounded bg-white border">
+      <div>
+        <div class="fw-semibold">{{ event.title }} <span class="badge text-bg-danger ms-1">Compulsory</span></div>
+        <div class="small text-secondary">{{ event.event_date.strftime('%d %b %Y') }} · {{ event.venue }} · Deadline: {{ event.registration_deadline.strftime('%d %b %Y, %I:%M %p') }}</div>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=event.id) }}">View</a>
+        <form method="post" action="{{ url_for('events.register', event_id=event.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-danger" type="submit">Register now</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</article>
+{% endif %}
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+  {% set cards = [
+    ('registered_events',    'Registered events', 'fa-calendar-check',    'primary'),
+    ('upcoming_events',      'Upcoming',          'fa-clock',             'info'),
+    ('volunteer_applications','Applications',      'fa-hand-holding-heart','warning'),
+    ('assigned_tasks',       'Assigned tasks',    'fa-list-check',        'teal'),
+    ('available_certificates','Certificates',      'fa-award',             'success'),
+    ('participation',        'Participation',     'fa-medal',             'danger')
+  ] %}
+  {% for key, label, icon, color in cards %}
+  <div class="col-sm-6 col-xl-4">
+    <article class="stat-card">
+      <div class="stat-icon {{ color }}"><i class="fa-solid {{ icon }}"></i></div>
+      <div>
+        <span>{{ label }}</span>
+        <strong>{{ stats[key] }}</strong>
+      </div>
+    </article>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">My workspace</span>
+          <h2>Quick actions</h2>
+        </div>
+      </div>
+      <div class="action-list">
+        <a href="{{ url_for('events.browse') }}">
+          <span><i class="fa-solid fa-calendar-days"></i>Browse &amp; register for events</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('student.registrations') }}">
+          <span><i class="fa-solid fa-ticket"></i>My registrations</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('student.volunteer_applications') }}">
+          <span><i class="fa-solid fa-hand-holding-heart"></i>Volunteer applications</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('tasks.student_tasks') }}">
+          <span><i class="fa-solid fa-list-check"></i>My assigned tasks</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('certificates.history') }}">
+          <span><i class="fa-solid fa-award"></i>Download certificates</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        <a href="{{ url_for('advanced.leaderboard') }}">
+          <span><i class="fa-solid fa-trophy"></i>Volunteer leaderboard</span>
+          <i class="fa-solid fa-chevron-right"></i>
+        </a>
+      </div>
+    </article>
+  </div>
+  <div class="col-lg-6">
+    <article class="panel-card h-100">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">AI-powered</span>
+          <h2>Event recommendations</h2>
+        </div>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('assistance.recommendations') }}">
+          <i class="fa-solid fa-wand-magic-sparkles me-1"></i>View all
+        </a>
+      </div>
+      <div class="empty-panel" style="min-height:160px;">
+        <i class="fa-solid fa-wand-magic-sparkles" style="color:var(--teal);background:#e6f8f9;"></i>
+        <h2>Personalized for you</h2>
+        <p>Get event recommendations based on your department and interests.</p>
+        <a class="btn btn-outline-primary btn-sm mt-2" href="{{ url_for('assistance.recommendations') }}">Discover events</a>
+      </div>
+    </article>
+  </div>
+</div>
+
+{% if registrations or approved_volunteers %}
+<article class="panel-card mt-4">
+  <div class="panel-header">
+    <div>
+      <span class="panel-kicker">Check-in passes</span>
+      <h2>My attendance QR codes &amp; unique keys</h2>
+    </div>
+  </div>
+  <p class="small text-secondary mb-3">Show your QR code at check-in, or share the unique key if the coordinator's scanner isn't working.</p>
+  <div class="row g-3">
+    {% for reg in registrations %}
+    <div class="col-md-6 col-xl-4">
+      <div class="border rounded p-3 d-flex align-items-center gap-3 h-100 bg-light-subtle">
+        <img src="{{ url_for('attendance.qr', registration_id=reg.id) }}" alt="Participant QR for {{ reg.event.title }}" width="96" height="96" class="border rounded bg-white p-1 flex-shrink-0">
+        <div class="overflow-hidden">
+          <span class="badge text-bg-primary mb-1">Participant</span>
+          <div class="fw-semibold text-truncate">{{ reg.event.title }}</div>
+          <div class="small text-secondary mt-1">Unique key:</div>
+          <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+            <code class="px-2 py-1 bg-white border rounded">{{ reg.attendance_key }}</code>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-key="{{ reg.attendance_key }}">Copy</button>
+          </div>
+          <a class="small d-inline-block mt-2" href="{{ url_for('attendance.qr', registration_id=reg.id) }}" target="_blank">Open full QR</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% for app_rec in approved_volunteers %}
+    <div class="col-md-6 col-xl-4">
+      <div class="border rounded p-3 d-flex align-items-center gap-3 h-100 bg-light-subtle">
+        <img src="{{ url_for('attendance.volunteer_qr', application_id=app_rec.id) }}" alt="Volunteer QR for {{ app_rec.event.title }}" width="96" height="96" class="border rounded bg-white p-1 flex-shrink-0">
+        <div class="overflow-hidden">
+          <span class="badge text-bg-info mb-1">Volunteer</span>
+          <div class="fw-semibold text-truncate">{{ app_rec.event.title }}</div>
+          <div class="small text-secondary mt-1">Unique key:</div>
+          <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+            <code class="px-2 py-1 bg-white border rounded">{{ app_rec.attendance_key }}</code>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-key="{{ app_rec.attendance_key }}">Copy</button>
+          </div>
+          <a class="small d-inline-block mt-2" href="{{ url_for('attendance.volunteer_qr', application_id=app_rec.id) }}" target="_blank">Open full QR</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</article>
+{% endif %}
+{% endblock %}

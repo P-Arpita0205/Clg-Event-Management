@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Campus Connect | College Event Management System{% endblock %}
+{% block body %}
+<nav class="navbar navbar-expand-lg public-nav sticky-top">
+  <div class="container">
+    <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
+      <span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>
+      Campus Connect
+    </a>
+    <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#publicNav" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="publicNav">
+      <ul class="navbar-nav ms-auto align-items-lg-center gap-1 mt-3 mt-lg-0">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('events.browse') }}">Events</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('advanced.leaderboard') }}">Leaderboard</a></li>
+        <li class="nav-item ms-lg-3 d-flex gap-2">
+          <a class="btn btn-outline-primary" href="{{ url_for('auth.login') }}">Sign in</a>
+          <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Join free</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<header class="hero-section">
+  <div class="container py-5">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-6 reveal">
+        <span class="eyebrow">One platform · Every campus experience</span>
+        <h1>Discover, organize &amp; contribute to campus life</h1>
+        <p class="lead">A secure, role-based platform for managing college events, volunteer programs, digital attendance, and institutional reporting.</p>
+        <div class="d-flex flex-wrap gap-3">
+          <a class="btn btn-light btn-lg" href="{{ url_for('auth.register') }}">
+            <i class="fa-solid fa-user-plus me-2"></i>Join as a student
+          </a>
+          <a class="btn btn-outline-light btn-lg" href="{{ url_for('auth.login') }}">
+            Access dashboard <i class="fa-solid fa-arrow-right ms-2"></i>
+          </a>
+        </div>
+        <div class="d-flex flex-wrap gap-4 mt-4" style="color:rgba(190,215,255,.8);font-size:.85rem;">
+          <span><i class="fa-solid fa-shield-halved me-2 text-teal"></i>Admin-approved accounts</span>
+          <span><i class="fa-solid fa-award me-2 text-teal"></i>Verifiable certificates</span>
+          <span><i class="fa-solid fa-qrcode me-2 text-teal"></i>QR attendance</span>
+        </div>
+      </div>
+      <div class="col-lg-6 reveal">
+        <div class="hero-panel">
+          <div class="hero-panel-icon"><i class="fa-solid fa-calendar-check"></i></div>
+          <h2>Campus activity, centralized</h2>
+          <p>Clear approvals, registrations, volunteer tracking, tasks, certificates, and analytics — all in one place.</p>
+          <div class="hero-metrics">
+            <div>
+              <strong>3</strong>
+              <span>Role-based workspaces</span>
+            </div>
+            <div>
+              <strong>24/7</strong>
+              <span>Campus access</span>
+            </div>
+            <div>
+              <strong>100%</strong>
+              <span>Digital processes</span>
+            </div>
+            <div>
+              <strong>Live</strong>
+              <span>Analytics &amp; reports</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Features -->
+<section class="section">
+  <div class="container">
+    <div class="text-center mb-5 reveal">
+      <span class="section-kicker-dark">Built for every campus community</span>
+      <div class="section-divider mx-auto"></div>
+      <h2 class="section-title">Everything needed to run great events</h2>
+      <p class="text-secondary mt-2 mx-auto" style="max-width:580px;">From creation to completion — manage every stage of a college event without leaving the platform.</p>
+    </div>
+    <div class="row g-4">
+      {% set features = [
+        ('fa-calendar-days', 'primary', 'Event management', 'Create, approve, publish, and monitor college events with full lifecycle tracking.'),
+        ('fa-user-check', 'teal', 'Participation', 'Students register for events; coordinators review and approve volunteer applications.'),
+        ('fa-qrcode', 'green', 'Digital attendance', 'Secure QR-code or manual attendance marking with instant reporting.'),
+        ('fa-award', 'amber', 'Certificates', 'Issue, download, and publicly verify participation and volunteer certificates.')
+      ] %}
+      {% for icon, color, title, text in features %}
+      <div class="col-md-6 col-xl-3 reveal">
+        <article class="feature-card">
+          <div class="feature-icon {{ color }}"><i class="fa-solid {{ icon }}"></i></div>
+          <h3>{{ title }}</h3>
+          <p>{{ text }}</p>
+        </article>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="section-alt">
+  <div class="container">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-5 reveal">
+        <span class="section-kicker-dark">How it works</span>
+        <div class="section-divider"></div>
+        <h2 class="section-title">Three roles, one seamless system</h2>
+        <p class="text-secondary mt-2">Campus Connect provides a tailored workspace for every stakeholder — students discover and participate, coordinators plan and lead, administrators oversee and report.</p>
+      </div>
+      <div class="col-lg-7 reveal">
+        <div class="d-flex flex-column gap-4">
+          {% set steps = [
+            ('fa-users', 'Students', 'Register for events, apply to volunteer, track tasks, download certificates, and view your hours on the leaderboard.'),
+            ('fa-clipboard-list', 'Coordinators', 'Create events, manage registrations, approve volunteers, issue certificates, and book campus resources.'),
+            ('fa-shield-halved', 'Administrators', 'Approve student accounts and events, manage departments and clubs, view analytics, and oversee all bookings.')
+          ] %}
+          {% for icon, role, desc in steps %}
+          <div class="d-flex gap-4 align-items-start">
+            <div class="stat-icon primary flex-shrink-0"><i class="fa-solid {{ icon }}"></i></div>
+            <div>
+              <h5 class="mb-1 fw-bold text-navy">{{ role }}</h5>
+              <p class="text-secondary mb-0" style="font-size:.92rem;">{{ desc }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Stats / Social proof -->
+<section class="section">
+  <div class="container">
+    <div class="row g-4 text-center reveal">
+      {% for num, label in [('∞', 'Events managed'), ('3', 'Role workspaces'), ('100%', 'Digital process'), ('Live', 'Real-time data')] %}
+      <div class="col-6 col-md-3">
+        <div class="stat-num">{{ num }}</div>
+        <div class="stat-desc mt-1">{{ label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="background:linear-gradient(130deg,#071527,#0e3465 60%,#0a6b78);padding:80px 0;color:white;text-align:center;">
+  <div class="container reveal">
+    <span class="eyebrow">Get started today</span>
+    <h2 style="font-size:2.2rem;font-weight:800;letter-spacing:-.03em;margin:14px 0;">Ready to streamline your campus events?</h2>
+    <p style="color:rgba(220,235,255,.8);max-width:520px;margin:0 auto 32px;font-size:1rem;">Join your college community on Campus Connect. Admin approval keeps the platform secure and trusted.</p>
+    <div class="d-flex flex-wrap justify-content-center gap-3">
+      <a class="btn btn-light btn-lg" href="{{ url_for('auth.register') }}"><i class="fa-solid fa-user-plus me-2"></i>Create student account</a>
+      <a class="btn btn-outline-light btn-lg" href="{{ url_for('events.browse') }}"><i class="fa-solid fa-calendar-days me-2"></i>Browse events</a>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="row g-4 mb-2">
+      <div class="col-lg-4">
+        <div class="footer-brand mb-3">
+          <span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>
+          Campus Connect
+        </div>
+        <p style="font-size:.88rem;color:rgba(185,210,240,.7);max-width:300px;">A secure campus workspace for events, volunteers, and institutional reporting.</p>
+      </div>
+      <div class="col-6 col-lg-2">
+        <h6>Platform</h6>
+        <div class="d-flex flex-column gap-2">
+          <a href="{{ url_for('events.browse') }}">Browse events</a>
+          <a href="{{ url_for('advanced.leaderboard') }}">Leaderboard</a>
+          <a href="{{ url_for('auth.register') }}">Sign up</a>
+        </div>
+      </div>
+      <div class="col-6 col-lg-2">
+        <h6>Roles</h6>
+        <div class="d-flex flex-column gap-2">
+          <a href="{{ url_for('auth.login') }}">Student portal</a>
+          <a href="{{ url_for('auth.login') }}">Coordinator</a>
+          <a href="{{ url_for('auth.login') }}">Administrator</a>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <h6>Secure by design</h6>
+        <p style="font-size:.85rem;color:rgba(185,210,240,.7);">All student accounts require administrator approval. Certificates are publicly verifiable with unique IDs.</p>
+      </div>
+    </div>
+    <div class="footer-bottom d-flex flex-column flex-md-row justify-content-between gap-2">
+      <span><strong style="color:rgba(230,240,255,.8);">Campus Connect</strong> · College Event &amp; Volunteer Management</span>
+      <span>Secure campus operations</span>
+    </div>
+  </div>
+</footer>
+{% endblock %}

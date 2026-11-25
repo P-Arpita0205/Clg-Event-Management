@@ -1,0 +1,30 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Departments{% endblock %}
+{% block page_title %}Departments{% endblock %}
+{% block dashboard_content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h1 class="h5">Create department</h1>
+      <form method="post" action="{{ url_for('community.create_department') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Department name</label>
+        <input class="form-control" name="name" maxlength="100" required>
+        <label class="form-label mt-3">Department code</label>
+        <input class="form-control" name="code" maxlength="20" required>
+        <button class="btn btn-primary w-100 mt-3">Create department</button>
+      </form>
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">College departments</h2>
+      {% if items %}
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Name</th><th>Code</th><th>Members</th><th></th></tr></thead><tbody>
+        {% for item in items %}<tr><td><strong>{{ item.name }}</strong></td><td>{{ item.code }}</td><td>{{ item.users|length }}</td><td><form method="post" action="{{ url_for('community.delete_department', department_id=item.id) }}" onsubmit="return confirm('Delete this department?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% endfor %}
+      </tbody></table></div>
+      {% else %}<div class="empty-panel"><i class="fa-solid fa-building-columns"></i><h2>No departments</h2></div>{% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

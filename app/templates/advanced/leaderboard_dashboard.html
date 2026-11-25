@@ -1,0 +1,33 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer leaderboard | Campus Connect{% endblock %}
+{% block page_title %}Volunteer leaderboard{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div>
+    <h1>Volunteer leaderboard</h1>
+    <p>Top student contributors recognized for verified campus service hours.</p>
+  </div>
+</div>
+<article class="panel-card" style="max-width:860px;">
+  {% if rows %}
+  <div>
+    {% for row in rows %}
+    <div class="leaderboard-row {{ 'rank-1' if loop.index == 1 else 'rank-2' if loop.index == 2 else 'rank-3' if loop.index == 3 else '' }}">
+      <div class="rank-num">{{ loop.index }}</div>
+      <div class="rank-name">
+        <div>{{ row[1] }}</div>
+        <div class="rank-id">{{ row[2] or 'Student' }}</div>
+      </div>
+      <div class="rank-hrs">{{ row[3] }} hrs</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-panel">
+    <i class="fa-solid fa-trophy"></i>
+    <h2>No recorded volunteer hours</h2>
+    <p>Verified volunteer hours will appear here once coordinators log contributions.</p>
+  </div>
+  {% endif %}
+</article>
+{% endblock %}

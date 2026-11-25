@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Event calendar{% endblock %}
+{% block body %}
+<nav class="navbar public-nav"><div class="container">
+  <a class="navbar-brand" href="{{ url_for('main.index') }}"><span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>Campus Connect</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('events.browse') }}">Browse events</a>
+</div></nav>
+<main class="section"><div class="container">
+  {% include "community/_calendar_content.html" %}
+</div></main>
+{% endblock %}

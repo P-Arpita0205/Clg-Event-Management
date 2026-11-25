@@ -1,0 +1,6 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}{{ event.title }} | Campus Connect{% endblock %}
+{% block page_title %}{{ event.title }}{% endblock %}
+{% block dashboard_content %}
+  {% include "events/_detail_content.html" %}
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event gallery{% endblock %}
+{% block page_title %}Event gallery{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading"><div><h1>{{ event.title }}</h1><p>Campus event gallery</p></div></div>
+{% if current_user.is_authenticated and (current_user.role_name == 'admin' or event.coordinator_id == current_user.id) %}
+<article class="panel-card mb-4">
+  <form method="post" enctype="multipart/form-data" class="d-flex align-items-end gap-2 flex-wrap">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="flex-grow-1"><label class="form-label">Image</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp" required></div>
+    <div class="flex-grow-1"><label class="form-label">Caption</label><input class="form-control" name="caption" maxlength="255"></div>
+    <button class="btn btn-primary">Upload</button>
+  </form>
+</article>
+{% endif %}
+<div class="row g-3">
+  {% for item in items %}
+  <div class="col-md-6 col-lg-4"><article class="feature-card p-2"><img src="{{ url_for('advanced.gallery_file', filename=item.image_path) }}" alt="{{ item.caption or event.title }}" style="width:100%;height:220px;object-fit:cover;border-radius:10px"><p class="mb-0 mt-2 px-2">{{ item.caption or 'Event photo' }}</p></article></div>
+  {% else %}<div class="col-12"><article class="panel-card empty-panel"><i class="fa-solid fa-images"></i><h2>No gallery photos</h2></article></div>{% endfor %}
+</div>
+{% endblock %}

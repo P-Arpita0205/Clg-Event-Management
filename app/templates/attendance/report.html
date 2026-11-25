@@ -1,0 +1,13 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Attendance report{% endblock %}
+{% block page_title %}Attendance report{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  <div class="d-flex justify-content-between mb-3"><div><h1 class="h4">{{ event.title }}</h1><p class="text-secondary mb-0">{{ event.event_date.strftime('%d %B %Y') }} · {{ records|length }} attendees</p></div></div>
+  {% if records %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Student</th><th>Student ID</th><th>Department</th><th>Method</th><th>Checked in</th></tr></thead><tbody>
+    {% for record in records %}<tr><td>{{ record.student.full_name }}</td><td>{{ record.student.student_id }}</td><td>{{ record.student.department.name if record.student.department else 'N/A' }}</td><td>{{ record.method|title }}</td><td>{{ record.checked_in_at.strftime('%d %b %Y, %I:%M %p') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-file-lines"></i><h2>No attendance records</h2></div>{% endif %}
+</article>
+{% endblock %}

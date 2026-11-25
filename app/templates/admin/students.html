@@ -1,0 +1,115 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Manage students{% endblock %}
+{% block page_title %}Manage students{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading">
+  <div>
+    <h1>Student accounts</h1>
+    <p>Review pending sign-up requests and manage active student accounts.</p>
+  </div>
+</div>
+
+{% if pending_students %}
+<article class="panel-card mb-4">
+  <div class="panel-header">
+    <div>
+      <span class="panel-kicker text-warning">Action required</span>
+      <h2>Pending sign-up requests ({{ pending_students|length }})</h2>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Student ID</th>
+          <th>Department</th>
+          <th>Phone</th>
+          <th>Requested</th>
+          <th>Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for student in pending_students %}
+        <tr>
+          <td>
+            <strong>{{ student.full_name }}</strong>
+            <div class="small text-secondary">{{ student.email }}</div>
+          </td>
+          <td>{{ student.student_id or '-' }}</td>
+          <td>{{ student.department.name if student.department else '-' }}</td>
+          <td>{{ student.phone or '-' }}</td>
+          <td>{{ student.created_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <div class="d-flex gap-1">
+              <form method="post" action="{{ url_for('admin.approve_student', user_id=student.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-success" type="submit">Approve</button>
+              </form>
+              <form method="post" action="{{ url_for('admin.reject_student', user_id=student.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Reject</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+{% endif %}
+
+<article class="panel-card">
+  <div class="panel-header">
+    <div>
+      <span class="panel-kicker">Directory</span>
+      <h2>Approved students</h2>
+    </div>
+  </div>
+  {% if student_list %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Student ID</th>
+          <th>Department</th>
+          <th>Status</th>
+          <th>Joined</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for student in student_list %}
+        <tr>
+          <td>
+            <strong>{{ student.full_name }}</strong>
+            <div class="small text-secondary">{{ student.email }}</div>
+          </td>
+          <td>{{ student.student_id or '-' }}</td>
+          <td>{{ student.department.name if student.department else '-' }}</td>
+          <td>
+            <span class="badge text-bg-success">Active</span>
+          </td>
+          <td>{{ student.created_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin.toggle_student', user_id=student.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Deactivate</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-panel">
+    <i class="fa-solid fa-users"></i>
+    <h2>No approved students yet</h2>
+    <p>Approved student accounts will appear here.</p>
+  </div>
+  {% endif %}
+</article>
+{% endblock %}

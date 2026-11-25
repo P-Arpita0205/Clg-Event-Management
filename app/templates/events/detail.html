@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} | Campus Connect{% endblock %}
+{% block body %}
+<nav class="navbar public-nav"><div class="container">
+  <a class="navbar-brand" href="{{ url_for('main.index') }}"><span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>Campus Connect</a>
+  {% if current_user.is_authenticated %}
+    <a class="btn btn-outline-primary" href="{{ url_for('auth.logout') }}">Sign out</a>
+  {% else %}
+    <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Sign in</a>
+  {% endif %}
+</div></nav>
+<main class="section">
+  <div class="container">
+    {% include "events/_detail_content.html" %}
+  </div>
+</main>
+{% endblock %}

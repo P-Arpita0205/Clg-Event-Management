@@ -1,0 +1,6 @@
+from flask import Blueprint
+
+
+community = Blueprint("community", __name__)
+
+from app.community import routes  # noqa: E402,F401

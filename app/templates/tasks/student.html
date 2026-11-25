@@ -1,0 +1,18 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}My tasks{% endblock %}
+{% block page_title %}My tasks{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if task_list %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Task</th><th>Event</th><th>Deadline</th><th>Status</th><th>Update</th></tr></thead><tbody>
+    {% for task in task_list %}<tr>
+      <td><strong>{{ task.title }}</strong><div class="small text-secondary">{{ task.description or '' }}</div></td>
+      <td>{{ task.event.title }}</td>
+      <td>{{ task.deadline.strftime('%d %b %Y, %I:%M %p') if task.deadline else 'No deadline' }}</td>
+      <td><span class="badge text-bg-{{ 'success' if task.status == 'completed' else 'info' if task.status == 'in_progress' else 'warning' }}">{{ task.status|replace('_',' ')|title }}</span></td>
+      <td><form method="post" action="{{ url_for('tasks.update_status', task_id=task.id) }}" class="d-flex gap-1"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select class="form-select form-select-sm" name="status"><option value="assigned" {{ 'selected' if task.status == 'assigned' }}>Assigned</option><option value="in_progress" {{ 'selected' if task.status == 'in_progress' }}>In progress</option><option value="completed" {{ 'selected' if task.status == 'completed' }}>Completed</option></select><button class="btn btn-sm btn-primary">Save</button></form></td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-list-check"></i><h2>No assigned tasks</h2><p>Volunteer tasks for approved applications will appear here.</p></div>{% endif %}
+</article>
+{% endblock %}

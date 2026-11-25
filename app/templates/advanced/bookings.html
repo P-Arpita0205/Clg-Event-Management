@@ -1,0 +1,102 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Resource bookings{% endblock %}
+{% block page_title %}Resource bookings{% endblock %}
+{% block dashboard_content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <article class="panel-card">
+      <h1 class="h5">Book a resource</h1>
+      {% if resources %}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="form-label">Resource</label>
+        <select class="form-select" name="resource_id" required>
+          {% for resource in resources %}
+          <option value="{{ resource.id }}">{{ resource.name }}{% if resource.capacity %} (cap: {{ resource.capacity }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        <label class="form-label mt-3">Linked event <span class="text-muted">(optional)</span></label>
+        <select class="form-select" name="event_id">
+          <option value="">— No linked event —</option>
+          {% for event in event_list %}
+          <option value="{{ event.id }}">{{ event.title }}</option>
+          {% endfor %}
+        </select>
+        <label class="form-label mt-3">Notify department <span class="text-muted">(optional)</span></label>
+        <select class="form-select" name="department_id">
+          <option value="">— Do not notify a department —</option>
+          {% for department in departments %}
+          <option value="{{ department.id }}">{{ department.name }} ({{ department.code }})</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Active students in the selected department will receive a notification for this date.</div>
+        <label class="form-label mt-3">Purpose</label>
+        <input class="form-control" name="purpose" required placeholder="Briefly describe the purpose">
+        <label class="form-label mt-3">Date</label>
+        <input class="form-control" type="date" name="booking_date" required>
+        <div class="row mt-3">
+          <div class="col-6">
+            <label class="form-label">Start time</label>
+            <input class="form-control" type="time" name="start_time" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label">End time</label>
+            <input class="form-control" type="time" name="end_time" required>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100 mt-3">
+          <i class="fa-solid fa-calendar-check me-1"></i>Check &amp; book
+        </button>
+      </form>
+      {% else %}
+      <div class="empty-panel">
+        <i class="fa-solid fa-building"></i>
+        <h2>No resources available</h2>
+        {% if current_user.role_name == 'admin' %}
+        <p class="text-muted">Go to <a href="{{ url_for('advanced.resources') }}">Resources</a> to add campus resources first.</p>
+        {% else %}
+        <p class="text-muted">No active campus resources are available for booking. Please contact the administrator.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+  </div>
+  <div class="col-lg-8">
+    <article class="panel-card">
+      <h2 class="h5">Confirmed bookings</h2>
+      {% if bookings %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>Resource</th>
+              <th>Booked by</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for booking in bookings %}
+            <tr>
+              <td><strong>{{ booking.resource.name }}</strong></td>
+              <td>{{ booking.requester.full_name }}</td>
+              <td>{{ booking.booking_date.strftime('%d %b %Y') }}</td>
+              <td>{{ booking.start_time.strftime('%I:%M %p') }}–{{ booking.end_time.strftime('%I:%M %p') }}</td>
+              <td>{{ booking.purpose }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-panel">
+        <i class="fa-solid fa-calendar-check"></i>
+        <h2>No confirmed bookings</h2>
+        <p class="text-muted">Bookings you make will appear here once confirmed.</p>
+      </div>
+      {% endif %}
+    </article>
+  </div>
+</div>
+{% endblock %}

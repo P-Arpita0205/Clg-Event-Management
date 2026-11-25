@@ -1,0 +1,39 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}My events{% endblock %}
+{% block page_title %}My events{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading"><div><h1>Event management</h1><p>Create and monitor your college events.</p></div><a class="btn btn-primary" href="{{ url_for('events.create') }}"><i class="fa-solid fa-plus me-2"></i>Create event</a></div>
+<article class="panel-card">
+  {% if event_list %}
+  <div class="table-responsive"><table class="table align-middle">
+    <thead><tr><th>Event</th><th>Date</th><th>Status</th><th>Registrations</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for event in event_list %}
+      <tr>
+        <td><strong>{{ event.title }}</strong>{% if event.registration_compulsory %} <span class="badge text-bg-danger ms-1">Compulsory</span>{% endif %}<div class="small text-secondary">{{ event.category.name }}</div></td>
+        <td>{{ event.event_date.strftime('%d %b %Y') }}</td>
+        <td><span class="badge text-bg-{{ 'success' if event.status == 'published' else 'info' if event.status == 'completed' else 'warning' if event.status in ['draft','pending'] else 'secondary' }}">{{ event.status|title }}</span></td>
+        <td>{{ event.approved_registration_count }}</td>
+        <td class="d-flex flex-wrap gap-1">
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=event.id) }}">View</a>
+          {% if event.status in ['draft','rejected'] %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('events.edit', event_id=event.id) }}">Edit</a>{% endif %}
+          <a class="btn btn-sm btn-outline-success" href="{{ url_for('attendance.manage', event_id=event.id) }}">Attendance</a>
+          <a class="btn btn-sm btn-outline-info" href="{{ url_for('tasks.manage', event_id=event.id) }}">Tasks</a>
+          <a class="btn btn-sm btn-outline-warning" href="{{ url_for('feedback.review', event_id=event.id) }}">Feedback</a>
+          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('advanced.event_budget', event_id=event.id) }}">Budget</a>
+          {% if event.status == 'published' %}
+          <form method="post" action="{{ url_for('events.complete', event_id=event.id) }}" onsubmit="return confirm('Mark this event as ended and issue certificates?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-primary">End event</button></form>
+          {% endif %}
+          {% if event.status != 'cancelled' %}
+          <form method="post" action="{{ url_for('events.cancel', event_id=event.id) }}" onsubmit="return confirm('Cancel this event?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Cancel</button></form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty-panel"><i class="fa-solid fa-calendar-plus"></i><h2>No events yet</h2><p>Create the first event for your college community.</p></div>
+  {% endif %}
+</article>
+{% endblock %}

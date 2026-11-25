@@ -1,0 +1,18 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Event feedback{% endblock %}
+{% block page_title %}Event feedback{% endblock %}
+{% block dashboard_content %}
+<div class="dashboard-heading"><div><h1>{{ event.title }}</h1><p>{{ response_count }} response{{ '' if response_count == 1 else 's' }} · {{ average if average is not none else 'No ratings yet' }}{{ '/5 average' if average is not none }}</p></div><a class="btn btn-outline-primary" href="{{ url_for('assistance.feedback_analysis', event_id=event.id) }}">Theme analysis</a></div>
+<article class="panel-card">
+  {% if items %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Rating</th><th>Suggestion</th><th>Submitted</th><th>Identity</th></tr></thead><tbody>
+    {% for item in items %}<tr>
+      <td><strong>{{ item.rating }}/5</strong> <i class="fa-solid fa-star text-warning"></i></td>
+      <td>{{ item.suggestions or 'No suggestion provided' }}</td>
+      <td>{{ item.created_at.strftime('%d %b %Y') }}</td>
+      <td>{{ 'Anonymous' if item.is_anonymous else (item.student.full_name if item.student else 'Student') }}</td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-comments"></i><h2>No feedback yet</h2></div>{% endif %}
+</article>
+{% endblock %}

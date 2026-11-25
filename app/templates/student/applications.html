@@ -1,0 +1,41 @@
+{% extends "dashboards/base_dashboard.html" %}
+{% block title %}Volunteer applications{% endblock %}
+{% block page_title %}Volunteer applications{% endblock %}
+{% block dashboard_content %}
+<article class="panel-card">
+  {% if application_list %}
+  <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Event</th><th>Preferred role</th><th>Status</th><th>Assignment</th><th>QR code &amp; unique key</th><th>Actions</th></tr></thead><tbody>
+    {% for application in application_list %}
+    <tr>
+      <td><strong>{{ application.event.title }}</strong></td>
+      <td>{{ application.preferred_role or 'Any suitable role' }}</td>
+      <td><span class="badge text-bg-{{ 'success' if application.status == 'approved' else 'danger' if application.status == 'rejected' else 'warning' }}">{{ application.status|title }}</span></td>
+      <td>{{ application.assignment.volunteer_role if application.assignment else 'Not assigned' }}</td>
+      <td>
+        {% if application.status == 'approved' %}
+        <div class="d-flex align-items-center gap-2">
+          <img src="{{ url_for('attendance.volunteer_qr', application_id=application.id) }}" alt="Volunteer QR for {{ application.event.title }}" width="84" height="84" class="border rounded bg-white p-1">
+          <div>
+            <div class="small text-secondary">Unique key</div>
+            <code class="d-inline-block px-2 py-1 bg-light border rounded">{{ application.attendance_key }}</code>
+            <div class="mt-1 d-flex gap-1">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-key="{{ application.attendance_key }}">Copy</button>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('attendance.volunteer_qr', application_id=application.id) }}" target="_blank">Open QR</a>
+            </div>
+          </div>
+        </div>
+        {% elif application.status == 'pending' %}
+        <span class="small text-secondary">Available after approval</span>
+        {% else %}
+        <span class="small text-secondary">—</span>
+        {% endif %}
+      </td>
+      <td>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('events.detail', event_id=application.event.id) }}">View</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="empty-panel"><i class="fa-solid fa-hand-holding-heart"></i><h2>No volunteer applications</h2><p>Apply to help at upcoming published events.</p></div>{% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Volunteer leaderboard | Campus Connect{% endblock %}
+{% block body %}
+<nav class="navbar navbar-expand-lg public-nav sticky-top">
+  <div class="container">
+    <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
+      <span class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></span>
+      Campus Connect
+    </a>
+    <div class="ms-auto d-flex gap-2">
+      <a class="btn btn-outline-primary" href="{{ url_for('events.browse') }}"><i class="fa-solid fa-calendar-days me-2"></i>Events</a>
+      <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Sign in</a>
+    </div>
+  </div>
+</nav>
+<main class="section">
+  <div class="container" style="max-width:860px;">
+    <div class="text-center mb-4">
+      <span class="section-kicker-dark">Community impact</span>
+      <div class="section-divider mx-auto"></div>
+      <h1 class="section-title">Volunteer leaderboard</h1>
+      <p class="text-secondary mt-2">Top student contributors recognized for verified campus service hours.</p>
+    </div>
+    <article class="panel-card">
+      {% if rows %}
+      <div>
+        {% for row in rows %}
+        <div class="leaderboard-row {{ 'rank-1' if loop.index == 1 else 'rank-2' if loop.index == 2 else 'rank-3' if loop.index == 3 else '' }}">
+          <div class="rank-num">{{ loop.index }}</div>
+          <div class="rank-name">
+            <div>{{ row[1] }}</div>
+            <div class="rank-id">{{ row[2] or 'Student' }}</div>
+          </div>
+          <div class="rank-hrs">{{ row[3] }} hrs</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-panel">
+        <i class="fa-solid fa-trophy"></i>
+        <h2>No recorded volunteer hours</h2>
+        <p>Verified volunteer hours will appear here once coordinators log contributions.</p>
+      </div>
+      {% endif %}
+    </article>
+  </div>
+</main>
+{% endblock %}
