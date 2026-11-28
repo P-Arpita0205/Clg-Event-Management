@@ -19,7 +19,11 @@ def dashboard():
     student_role = Role.find_one(name="student")
     student_role_id = student_role.id if student_role else None
 
-    dept_user_counts = Counter(u.department_id for u in users if u.department_id is not None)
+    dept_user_counts = Counter(
+        u.department_id
+        for u in users
+        if student_role_id is not None and u.role_id == student_role_id and u.department_id is not None
+    )
     category_event_counts = Counter(e.category_id for e in events if e.category_id is not None)
     status_counts = Counter(e.status for e in events if e.status)
 

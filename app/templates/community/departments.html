@@ -20,8 +20,8 @@
     <article class="panel-card">
       <h2 class="h5">College departments</h2>
       {% if items %}
-      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Name</th><th>Code</th><th>Members</th><th></th></tr></thead><tbody>
-        {% for item in items %}<tr><td><strong>{{ item.name }}</strong></td><td>{{ item.code }}</td><td>{{ item.users|length }}</td><td><form method="post" action="{{ url_for('community.delete_department', department_id=item.id) }}" onsubmit="return confirm('Delete this department?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% endfor %}
+      <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Name</th><th>Code</th><th>Students</th><th></th></tr></thead><tbody>
+        {% for item in items %}<tr><td><strong>{{ item.name }}</strong></td><td>{{ item.code }}</td><td>{{ student_counts.get(item.id, 0) }}</td><td><form method="post" action="{{ url_for('community.delete_department', department_id=item.id) }}" onsubmit="return confirm('Delete this department?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% endfor %}
       </tbody></table></div>
       {% else %}<div class="empty-panel"><i class="fa-solid fa-building-columns"></i><h2>No departments</h2></div>{% endif %}
     </article>

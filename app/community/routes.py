@@ -1,4 +1,5 @@
 import calendar
+from collections import Counter
 from datetime import date
 
 from flask import abort, flash, redirect, render_template, request, url_for
@@ -6,14 +7,20 @@ from flask_login import current_user
 
 from app.community import community
 from app.decorators import roles_required
-from app.models import Club, Department, Event, ResourceBooking
+from app.models import Club, Department, Event, ResourceBooking, Role, User
 
 
 @community.route("/departments")
 @roles_required("admin")
 def departments():
     items = sorted(Department.all(), key=lambda d: d.name)
-    return render_template("community/departments.html", items=items)
+    student_role = Role.find_one(name="student")
+    student_counts = (
+        Counter(u.department_id for u in User.where(role_id=student_role.id) if u.department_id is not None)
+        if student_role
+        else Counter()
+    )
+    return render_template("community/departments.html", items=items, student_counts=student_counts)
 
 
 @community.route("/departments/create", methods=["POST"])

@@ -1492,3 +1492,43 @@ def test_register_page_disables_autofill_and_department_preselection(client, app
     assert invalid_dept.status_code == 200
     with app.app_context():
         assert User.find_one(email="fresh@college.edu") is None
+
+
+def test_department_counts_only_include_students(client, app):
+    with app.app_context():
+        aiml_dept = Department(name="CSE (AIML)", code="CI").save()
+        student_role = Role.find_one(name="student")
+        for idx in (1, 2):
+            u = User(
+                full_name=f"AIML Student {idx}",
+                email=f"aiml{idx}@college.edu",
+                student_id=f"CI00{idx}",
+                role=student_role,
+                department=aiml_dept,
+            )
+            u.set_password("SecurePass123!")
+            u.save()
+
+    admin_id = create_user(app, "admin", "deptadmin@college.edu")
+    create_user(app, "coordinator", "deptcoord@college.edu")
+
+    login_as(client, admin_id)
+    dash = client.get("/admin/")
+    assert dash.status_code == 200
+    html = dash.data.decode("utf-8")
+    import json
+    import re
+
+    labels_match = re.search(r'id="departmentChart"[^>]*data-labels=\'([^\']+)\'', html)
+    values_match = re.search(r'id="departmentChart"[^>]*data-values=\'([^\']+)\'', html)
+    assert labels_match and values_match
+    counts_by_dept = dict(zip(json.loads(labels_match.group(1)), json.loads(values_match.group(1))))
+    assert counts_by_dept["Computer Science"] == 0
+    assert counts_by_dept["CSE (AIML)"] == 2
+
+    dept_page = client.get("/departments")
+    assert dept_page.status_code == 200
+    dept_html = dept_page.data.decode("utf-8")
+    assert "<th>Students</th>" in dept_html
+    assert "<td><strong>Computer Science</strong></td><td>CSE</td><td>0</td>" in dept_html
+    assert "<td><strong>CSE (AIML)</strong></td><td>CI</td><td>2</td>" in dept_html

@@ -69,7 +69,7 @@ if (departmentCanvas && window.Chart) {
     data: {
       labels,
       datasets: [{
-        label: "Users",
+        label: "Students",
         data: values,
         backgroundColor: "#155eef",
         borderRadius: 8,
