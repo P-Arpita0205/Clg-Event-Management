@@ -9,42 +9,37 @@
     </a>
     <h1>Create student account</h1>
     <p class="subtitle">Submit your official college details. An administrator will review and approve your request before you can sign in.</p>
-    <form method="post" novalidate>
+    <form id="register-form" method="post" autocomplete="off" novalidate>
       {{ form.hidden_tag() }}
       <div class="row g-3">
         <div class="col-md-6">
           {{ form.full_name.label(class="form-label") }}
-          {{ form.full_name(class="form-control" + (" is-invalid" if form.full_name.errors else ""), placeholder="e.g. Alex Johnson") }}
+          {{ form.full_name(class="form-control" + (" is-invalid" if form.full_name.errors else ""), placeholder="e.g. Alex Johnson", autocomplete="off", readonly=(request.method == 'GET'), onfocus="this.removeAttribute('readonly');") }}
           {% for error in form.full_name.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
         <div class="col-md-6">
           {{ form.student_id.label(class="form-label") }}
-          {{ form.student_id(class="form-control" + (" is-invalid" if form.student_id.errors else ""), placeholder="e.g. CSE2026001") }}
+          {{ form.student_id(class="form-control" + (" is-invalid" if form.student_id.errors else ""), placeholder="e.g. CSE2026001", autocomplete="off", readonly=(request.method == 'GET'), onfocus="this.removeAttribute('readonly');") }}
           {% for error in form.student_id.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
-        <div class="col-md-7">
+        <div class="col-12">
           {{ form.email.label(class="form-label") }}
-          {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="you@college.edu") }}
+          {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="you@college.edu", autocomplete="off", readonly=(request.method == 'GET'), onfocus="this.removeAttribute('readonly');") }}
           {% for error in form.email.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
-        </div>
-        <div class="col-md-5">
-          {{ form.phone.label(class="form-label") }}
-          {{ form.phone(class="form-control" + (" is-invalid" if form.phone.errors else ""), placeholder="+91 98765 43210") }}
-          {% for error in form.phone.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
         <div class="col-12">
           {{ form.department_id.label(class="form-label") }}
-          {{ form.department_id(class="form-select" + (" is-invalid" if form.department_id.errors else "")) }}
+          {{ form.department_id(class="form-select" + (" is-invalid" if form.department_id.errors else ""), autocomplete="off") }}
           {% for error in form.department_id.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
         <div class="col-md-6">
           {{ form.password.label(class="form-label") }}
-          {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Min. 12 characters") }}
+          {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Min. 12 characters", autocomplete="new-password", readonly=(request.method == 'GET'), onfocus="this.removeAttribute('readonly');") }}
           {% for error in form.password.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
         <div class="col-md-6">
           {{ form.confirm_password.label(class="form-label") }}
-          {{ form.confirm_password(class="form-control" + (" is-invalid" if form.confirm_password.errors else ""), placeholder="Re-enter password") }}
+          {{ form.confirm_password(class="form-control" + (" is-invalid" if form.confirm_password.errors else ""), placeholder="Re-enter password", autocomplete="new-password", readonly=(request.method == 'GET'), onfocus="this.removeAttribute('readonly');") }}
           {% for error in form.confirm_password.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
         </div>
       </div>
@@ -59,4 +54,23 @@
     <p class="auth-switch">Already approved? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
   </section>
 </main>
+{% endblock %}
+{% block scripts %}
+{% if request.method == 'GET' %}
+<script>
+  window.addEventListener("pageshow", function () {
+    const form = document.getElementById("register-form");
+    if (!form) return;
+    form.reset();
+    form.querySelectorAll("input:not([type='hidden']):not([type='submit'])").forEach(function (input) {
+      input.value = "";
+      input.setAttribute("readonly", "readonly");
+    });
+    const deptSelect = form.querySelector("select");
+    if (deptSelect) {
+      deptSelect.selectedIndex = 0;
+    }
+  });
+</script>
+{% endif %}
 {% endblock %}

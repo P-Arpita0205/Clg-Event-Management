@@ -44,7 +44,9 @@ def register():
 
     form = RegistrationForm()
     departments = sorted(Department.all(), key=lambda d: d.name)
-    form.department_id.choices = [(department.id, department.name) for department in departments]
+    form.department_id.choices = [(0, "Select department")] + [
+        (department.id, department.name) for department in departments
+    ]
     if form.validate_on_submit():
         student_role = Role.find_one(name="student")
         if not student_role:
@@ -55,7 +57,6 @@ def register():
             full_name=form.full_name.data.strip(),
             email=form.email.data.strip().lower(),
             student_id=form.student_id.data.strip(),
-            phone=form.phone.data.strip() or None if form.phone.data else None,
             department_id=form.department_id.data,
             role=student_role,
             is_active=False,

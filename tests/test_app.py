@@ -128,7 +128,6 @@ def test_student_registration_and_login(client, app):
             "full_name": "Alex Student",
             "email": "alex@college.edu",
             "student_id": "CSE2026001",
-            "phone": "+91 98765 43210",
             "password": "StrongPassword123!",
             "confirm_password": "StrongPassword123!",
             "department_id": department_id,
@@ -1464,3 +1463,32 @@ def test_sqlite_to_firestore_migration_script_preserves_ids_and_prevents_duplica
         # Counter synced past max migrated ID (42), so next user gets ID 43
         next_user = User(full_name="New User", email="new@college.edu", role_id=3, department_id=10).save()
         assert next_user.id == 43
+
+
+def test_register_page_disables_autofill_and_department_preselection(client, app):
+    resp = client.get("/auth/register")
+    assert resp.status_code == 200
+    assert b'autocomplete="off"' in resp.data
+    assert b'autocomplete="new-password"' in resp.data
+    assert b"readonly" in resp.data
+    assert b"Select department" in resp.data
+    assert b'name="phone"' not in resp.data
+    assert b"Phone number" not in resp.data
+    assert b"admin@college.edu" not in resp.data
+    assert b"student@college.edu" not in resp.data
+
+    invalid_dept = client.post(
+        "/auth/register",
+        data={
+            "full_name": "Fresh Student",
+            "email": "fresh@college.edu",
+            "student_id": "CSE2026999",
+            "department_id": 0,
+            "password": "StrongPassword123!",
+            "confirm_password": "StrongPassword123!",
+        },
+        follow_redirects=True,
+    )
+    assert invalid_dept.status_code == 200
+    with app.app_context():
+        assert User.find_one(email="fresh@college.edu") is None

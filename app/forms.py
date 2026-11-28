@@ -15,7 +15,6 @@ class RegistrationForm(FlaskForm):
     full_name = StringField("Full name", validators=[DataRequired(), Length(min=2, max=120)])
     email = StringField("College email", validators=[DataRequired(), Email(), Length(max=180)])
     student_id = StringField("Student ID", validators=[DataRequired(), Length(min=3, max=50)])
-    phone = StringField("Phone number (optional)", validators=[Length(max=20)])
     password = PasswordField(
         "Password",
         validators=[
