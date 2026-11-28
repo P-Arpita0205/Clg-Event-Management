@@ -6,7 +6,6 @@ import qrcode
 from flask import abort, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import current_user
 
-from app import db
 from app.attendance import attendance
 from app.certificates.routes import (
     issue_eligible_certificates_for_event,
@@ -24,7 +23,7 @@ def coordinator_owns_event(event):
 @attendance.route("/qr/<int:registration_id>")
 @roles_required("student")
 def qr(registration_id):
-    registration = db.session.get(EventRegistration, registration_id)
+    registration = EventRegistration.get(registration_id)
     if not registration or registration.student_id != current_user.id:
         abort(403)
     payload = url_for("attendance.validate", token=registration.qr_token, _external=True)
@@ -38,7 +37,7 @@ def qr(registration_id):
 @attendance.route("/qr/volunteer/<int:application_id>")
 @roles_required("student")
 def volunteer_qr(application_id):
-    application = db.session.get(VolunteerApplication, application_id)
+    application = VolunteerApplication.get(application_id)
     if (
         not application
         or application.student_id != current_user.id
@@ -47,7 +46,7 @@ def volunteer_qr(application_id):
         abort(403)
     if not application.qr_token:
         application.qr_token = secrets.token_urlsafe(32)
-        db.session.commit()
+        application.save()
     payload = url_for("attendance.validate", token=application.qr_token, _external=True)
     image = qrcode.make(payload)
     buffer = BytesIO()
@@ -81,7 +80,7 @@ def _record_qr_attendance(token, expected_event_id=None):
         prefix, rec_id_str, _ = key_match.groups()
         candidate_key = raw.upper()
         if prefix == "P":
-            reg = db.session.get(EventRegistration, int(rec_id_str))
+            reg = EventRegistration.get(int(rec_id_str))
             if (
                 reg
                 and reg.status == "confirmed"
@@ -90,7 +89,7 @@ def _record_qr_attendance(token, expected_event_id=None):
             ):
                 registration = reg
         else:
-            app_rec = db.session.get(VolunteerApplication, int(rec_id_str))
+            app_rec = VolunteerApplication.get(int(rec_id_str))
             if (
                 app_rec
                 and app_rec.status == "approved"
@@ -101,12 +100,12 @@ def _record_qr_attendance(token, expected_event_id=None):
     else:
         normalized_token = raw.rstrip("/").split("/")[-1]
         if normalized_token:
-            registration = EventRegistration.query.filter_by(qr_token=normalized_token).first()
+            registration = EventRegistration.find_one(qr_token=normalized_token)
             if not registration:
-                application = VolunteerApplication.query.filter_by(
+                application = VolunteerApplication.find_one(
                     qr_token=normalized_token,
                     status="approved",
-                ).first()
+                )
 
     if not registration and not application:
         return {
@@ -123,20 +122,20 @@ def _record_qr_attendance(token, expected_event_id=None):
         event = registration.event
         student_id = registration.student_id
         student = registration.student
-        application = VolunteerApplication.query.filter_by(
+        application = VolunteerApplication.find_one(
             event_id=event.id,
             student_id=student_id,
             status="approved",
-        ).first()
+        )
     else:
         event = application.event
         student_id = application.student_id
         student = application.student
-        registration = EventRegistration.query.filter_by(
+        registration = EventRegistration.find_one(
             event_id=event.id,
             student_id=student_id,
             status="confirmed",
-        ).first()
+        )
 
     if not coordinator_owns_event(event):
         abort(403)
@@ -158,10 +157,7 @@ def _record_qr_attendance(token, expected_event_id=None):
     if application and application.status == "approved":
         roles.append("Volunteer")
 
-    existing = Attendance.query.filter_by(
-        event_id=event.id,
-        student_id=student_id,
-    ).first()
+    existing = Attendance.find_one(event_id=event.id, student_id=student_id)
     if existing:
         if existing.method == "qr":
             return {
@@ -178,13 +174,13 @@ def _record_qr_attendance(token, expected_event_id=None):
             existing.registration_id = registration.id
         if application and not existing.volunteer_application_id:
             existing.volunteer_application_id = application.id
+        existing.save()
         notify(
             student_id,
             "Attendance recorded",
             f"Your QR attendance for {event.title} was recorded.",
             url_for("student.dashboard"),
         )
-        db.session.commit()
         record = existing
     else:
         record = Attendance(
@@ -193,15 +189,13 @@ def _record_qr_attendance(token, expected_event_id=None):
             registration_id=registration.id if registration else None,
             volunteer_application_id=application.id if application else None,
             method="qr",
-        )
-        db.session.add(record)
+        ).save()
         notify(
             student_id,
             "Attendance recorded",
             f"Your attendance for {event.title} was recorded.",
             url_for("student.dashboard"),
         )
-        db.session.commit()
 
     if event.has_ended:
         issue_eligible_certificates_for_event(
@@ -238,7 +232,7 @@ def validate(token):
 @attendance.route("/event/<int:event_id>/scan", methods=["POST"])
 @roles_required("coordinator", "admin")
 def scan(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if not coordinator_owns_event(event):
@@ -254,11 +248,11 @@ def scan(event_id):
     if result["valid"] and student:
         issued_types = [
             cert.certificate_type
-            for cert in Certificate.query.filter_by(
+            for cert in Certificate.where(
                 event_id=event.id,
                 recipient_id=student.id,
                 is_valid=True,
-            ).all()
+            )
         ]
 
     return jsonify(
@@ -280,7 +274,7 @@ def scan(event_id):
 @attendance.route("/event/<int:event_id>", methods=["GET", "POST"])
 @roles_required("coordinator", "admin")
 def manage(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if not coordinator_owns_event(event):
@@ -291,51 +285,40 @@ def manage(event_id):
             token = qr_input.rstrip("/").split("/")[-1]
             return redirect(url_for("attendance.validate", token=token))
         student_id = request.form.get("student_id", type=int)
-        registration = EventRegistration.query.filter_by(
+        registration = EventRegistration.find_one(
             event_id=event.id,
             student_id=student_id,
             status="confirmed",
-        ).first()
+        )
         if not registration:
             return redirect(url_for("attendance.manage", event_id=event.id))
-        existing = Attendance.query.filter_by(
-            event_id=event.id,
-            student_id=student_id,
-        ).first()
+        existing = Attendance.find_one(event_id=event.id, student_id=student_id)
         if not existing:
-            db.session.add(
-                Attendance(
-                    event_id=event.id,
-                    student_id=student_id,
-                    registration_id=registration.id,
-                    method="manual",
-                )
-            )
+            Attendance(
+                event_id=event.id,
+                student_id=student_id,
+                registration_id=registration.id,
+                method="manual",
+            ).save()
             notify(
                 student_id,
                 "Attendance recorded",
                 f"Your attendance for {event.title} was recorded manually.",
                 url_for("student.dashboard"),
             )
-            db.session.commit()
     else:
         sync_ended_event_certificates(event_id=event.id)
 
-    registrations = EventRegistration.query.filter_by(
-        event_id=event.id,
-        status="confirmed",
-    ).all()
-    records = Attendance.query.filter_by(event_id=event.id).all()
+    registrations = EventRegistration.where(event_id=event.id, status="confirmed")
+    records = Attendance.where(event_id=event.id)
     participant_ids = {registration.student_id for registration in registrations}
     volunteer_ids = {
-        row[0]
-        for row in db.session.query(VolunteerApplication.student_id)
-        .filter_by(event_id=event.id, status="approved")
-        .all()
+        app_rec.student_id
+        for app_rec in VolunteerApplication.where(event_id=event.id, status="approved")
     }
     issued_certs = {
         (cert.recipient_id, cert.certificate_type)
-        for cert in Certificate.query.filter_by(event_id=event.id, is_valid=True).all()
+        for cert in Certificate.where(event_id=event.id, is_valid=True)
     }
     return render_template(
         "attendance/manage.html",
@@ -351,12 +334,13 @@ def manage(event_id):
 @attendance.route("/event/<int:event_id>/report")
 @roles_required("coordinator", "admin")
 def report(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if not coordinator_owns_event(event):
         abort(403)
-    records = Attendance.query.filter_by(event_id=event.id).order_by(
-        Attendance.checked_in_at.asc()
-    ).all()
+    records = sorted(
+        Attendance.where(event_id=event.id),
+        key=lambda r: r.checked_in_at,
+    )
     return render_template("attendance/report.html", event=event, records=records)

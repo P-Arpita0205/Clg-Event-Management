@@ -1,11 +1,10 @@
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
-from app import db
 from app.auth import auth
 from app.forms import LoginForm, RegistrationForm
 from app.models import Department, Role, User
-from app.notifications.routes import notify
+from app.notifications.routes import notify_many
 
 
 def dashboard_endpoint(role_name):
@@ -23,7 +22,7 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.strip().lower()).first()
+        user = User.find_one(email=form.email.data.strip().lower())
         if user and user.check_password(form.password.data):
             if not user.is_active:
                 flash(
@@ -44,11 +43,10 @@ def register():
         return redirect(url_for(dashboard_endpoint(current_user.role_name)))
 
     form = RegistrationForm()
-    form.department_id.choices = [
-        (department.id, department.name) for department in Department.query.order_by(Department.name)
-    ]
+    departments = sorted(Department.all(), key=lambda d: d.name)
+    form.department_id.choices = [(department.id, department.name) for department in departments]
     if form.validate_on_submit():
-        student_role = Role.query.filter_by(name="student").first()
+        student_role = Role.find_one(name="student")
         if not student_role:
             flash("The system is not initialized. Please contact the administrator.", "danger")
             return render_template("auth/register.html", form=form)
@@ -63,22 +61,21 @@ def register():
             is_active=False,
         )
         user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.flush()
+        user.save()
 
-        admins = User.query.join(Role).filter(
-            Role.name == "admin",
-            User.is_active.is_(True),
-        ).all()
-        for admin_user in admins:
-            notify(
-                admin_user.id,
-                "New student sign-up request",
-                f"{user.full_name} ({user.student_id}) requested account approval.",
-                url_for("admin.students"),
-            )
+        admin_role = Role.find_one(name="admin")
+        if admin_role:
+            admins = [u for u in User.where(role_id=admin_role.id) if u.is_active]
+            notify_many([
+                (
+                    admin_user.id,
+                    "New student sign-up request",
+                    f"{user.full_name} ({user.student_id}) requested account approval.",
+                    url_for("admin.students"),
+                )
+                for admin_user in admins
+            ])
 
-        db.session.commit()
         flash(
             "Your registration request has been sent to the administrator for approval.",
             "info",

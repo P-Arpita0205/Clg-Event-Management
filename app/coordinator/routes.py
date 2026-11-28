@@ -1,7 +1,6 @@
 from flask import render_template
 from flask_login import current_user
 
-from app import db
 from app.coordinator import coordinator
 from app.decorators import roles_required
 from app.models import (
@@ -17,28 +16,41 @@ from app.models import (
 @coordinator.route("/")
 @roles_required("coordinator")
 def dashboard():
-    managed_events = Event.query.filter_by(coordinator_id=current_user.id).order_by(Event.created_at.desc())
-    all_managed = managed_events.all()
-    event_ids = [event.id for event in all_managed]
+    all_managed = sorted(
+        Event.where(coordinator_id=current_user.id),
+        key=lambda e: e.created_at,
+        reverse=True,
+    )
+    event_ids = {event.id for event in all_managed}
+
+    registrations_count = (
+        sum(1 for r in EventRegistration.all() if r.event_id in event_ids)
+        if event_ids
+        else 0
+    )
+    apps = (
+        [a for a in VolunteerApplication.all() if a.event_id in event_ids]
+        if event_ids
+        else []
+    )
+    completed_tasks = (
+        sum(1 for t in VolunteerTask.where(status="completed") if t.event_id in event_ids)
+        if event_ids
+        else 0
+    )
+    attendance_count = (
+        sum(1 for a in Attendance.all() if a.event_id in event_ids)
+        if event_ids
+        else 0
+    )
+
     stats = {
         "managed_events": len(all_managed),
-        "registrations": EventRegistration.query.filter(
-            EventRegistration.event_id.in_(event_ids)
-        ).count() if event_ids else 0,
-        "applications": VolunteerApplication.query.join(Event).filter(
-            Event.coordinator_id == current_user.id
-        ).count(),
-        "pending_approvals": VolunteerApplication.query.join(Event).filter(
-            Event.coordinator_id == current_user.id,
-            VolunteerApplication.status == "pending",
-        ).count(),
-        "completed_tasks": VolunteerTask.query.join(Event).filter(
-            Event.coordinator_id == current_user.id,
-            VolunteerTask.status == "completed",
-        ).count() if event_ids else 0,
-        "attendance": Attendance.query.filter(
-            Attendance.event_id.in_(event_ids)
-        ).count() if event_ids else 0,
+        "registrations": registrations_count,
+        "applications": len(apps),
+        "pending_approvals": sum(1 for a in apps if a.status == "pending"),
+        "completed_tasks": completed_tasks,
+        "attendance": attendance_count,
     }
     return render_template("dashboards/coordinator.html", stats=stats, recent_events=all_managed[:5])
 
@@ -46,9 +58,11 @@ def dashboard():
 @coordinator.route("/events")
 @roles_required("coordinator")
 def events():
-    event_list = Event.query.filter_by(coordinator_id=current_user.id).order_by(
-        Event.created_at.desc()
-    ).all()
+    event_list = sorted(
+        Event.where(coordinator_id=current_user.id),
+        key=lambda e: e.created_at,
+        reverse=True,
+    )
     return render_template("coordinator/events.html", event_list=event_list)
 
 
@@ -58,36 +72,28 @@ def applications():
     from app.certificates.routes import sync_ended_event_certificates
 
     sync_ended_event_certificates(coordinator_id=current_user.id)
-    application_list = (
-        VolunteerApplication.query.join(Event)
-        .filter(Event.coordinator_id == current_user.id)
-        .order_by(VolunteerApplication.created_at.desc())
-        .all()
+    managed_events = Event.where(coordinator_id=current_user.id)
+    event_ids = {event.id for event in managed_events}
+
+    application_list = sorted(
+        [a for a in VolunteerApplication.all() if a.event_id in event_ids],
+        key=lambda a: a.created_at,
+        reverse=True,
     )
-    event_ids = {application.event_id for application in application_list}
     qr_attended_keys = (
         {
-            (row[0], row[1])
-            for row in db.session.query(Attendance.event_id, Attendance.student_id)
-            .filter(
-                Attendance.event_id.in_(event_ids),
-                Attendance.method == "qr",
-            )
-            .all()
+            (record.event_id, record.student_id)
+            for record in Attendance.where(method="qr")
+            if record.event_id in event_ids
         }
         if event_ids
         else set()
     )
     issued_volunteer_cert_keys = (
         {
-            (row[0], row[1])
-            for row in db.session.query(Certificate.event_id, Certificate.recipient_id)
-            .filter(
-                Certificate.event_id.in_(event_ids),
-                Certificate.certificate_type == "volunteer",
-                Certificate.is_valid.is_(True),
-            )
-            .all()
+            (cert.event_id, cert.recipient_id)
+            for cert in Certificate.where(certificate_type="volunteer", is_valid=True)
+            if cert.event_id in event_ids
         }
         if event_ids
         else set()

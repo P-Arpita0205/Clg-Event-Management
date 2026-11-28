@@ -17,3 +17,12 @@ Thumbs.db
 .idea/
 .coverage
 htmlcov/
+
+# Firebase service account credentials (never commit private keys)
+*firebase-adminsdk*.json
+firebase-credentials*.json
+firebase-service-account*.json
+serviceAccountKey*.json
+service-account*.json
+credentials/*.json
+secrets/

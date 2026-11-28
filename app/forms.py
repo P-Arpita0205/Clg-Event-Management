@@ -31,9 +31,9 @@ class RegistrationForm(FlaskForm):
     submit = SubmitField("Create account")
 
     def validate_email(self, field):
-        if User.query.filter_by(email=field.data.strip().lower()).first():
+        if User.find_one(email=field.data.strip().lower()):
             raise ValidationError("An account with this email already exists.")
 
     def validate_student_id(self, field):
-        if User.query.filter_by(student_id=field.data.strip()).first():
+        if User.find_one(student_id=field.data.strip()):
             raise ValidationError("This student ID is already registered.")

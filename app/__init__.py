@@ -2,15 +2,13 @@ import os
 
 from flask import Flask
 from flask_login import LoginManager
-from flask_migrate import Migrate
-from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 
+from app.firebase_config import init_firebase
+from app.firestore_db import check_connection
 from config import Config
 
 
-db = SQLAlchemy()
-migrate = Migrate()
 csrf = CSRFProtect()
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -24,11 +22,18 @@ def create_app(config_class=Config):
     if app.config.get("ENV") == "production" or os.environ.get("APP_ENV") == "production":
         if app.config["SECRET_KEY"].startswith("development-only"):
             raise RuntimeError("SECRET_KEY must be configured in production.")
-        if not os.environ.get("DATABASE_URL", "").startswith(("mysql://", "mysql+pymysql://", "sqlite:///")):
-            raise RuntimeError("A valid DATABASE_URL (mysql or sqlite) must be configured in production.")
+        if app.config.get("FIRESTORE_BACKEND") != "memory":
+            if not app.config.get("FIREBASE_PROJECT_ID"):
+                raise RuntimeError("FIREBASE_PROJECT_ID must be configured in production.")
+            if not (
+                app.config.get("FIREBASE_CREDENTIALS_PATH")
+                or app.config.get("FIREBASE_CREDENTIALS_JSON")
+            ):
+                raise RuntimeError(
+                    "FIREBASE_CREDENTIALS_PATH or FIREBASE_CREDENTIALS_JSON must be configured in production."
+                )
 
-    db.init_app(app)
-    migrate.init_app(app, db)
+    init_firebase(app)
     csrf.init_app(app)
     login_manager.init_app(app)
 
@@ -55,20 +60,19 @@ def create_app(config_class=Config):
     @app.errorhandler(413)
     def file_too_large(error):
         from flask import flash, redirect, request
+
         flash("The uploaded file is too large.", "danger")
         return redirect(request.referrer or "/"), 413
 
     @app.errorhandler(500)
     def server_error(error):
-        db.session.rollback()
         app.logger.exception("Unhandled server error")
         return app.jinja_env.get_template("errors/500.html").render(), 500
 
     @app.route("/health")
     def health():
-        from sqlalchemy import text
-        db.session.execute(text("SELECT 1"))
-        return {"status": "ok", "database": "connected"}, 200
+        check_connection()
+        return {"status": "ok", "database": "firestore"}, 200
 
     from app.auth import auth
     from app.main import main
@@ -108,23 +112,20 @@ def create_app(config_class=Config):
     def notification_context():
         from flask_login import current_user
         from app.models import Notification
+
         if current_user.is_authenticated:
-            unread = Notification.query.filter_by(
-                user_id=current_user.id,
-                is_read=False,
-            ).count()
+            unread = Notification.count(user_id=current_user.id, is_read=False)
             return {"unread_notification_count": unread}
         return {"unread_notification_count": 0}
 
     @app.cli.command("init-db")
     def init_db():
-        """Create tables and seed roles and departments."""
-        db.create_all()
-        from app.models import Role, Department, EventCategory
+        """Seed roles, departments, event categories, and default resources in Firestore."""
+        from app.models import Department, EventCategory, Resource, Role
 
         for name in ("admin", "coordinator", "student"):
-            if not Role.query.filter_by(name=name).first():
-                db.session.add(Role(name=name))
+            if not Role.find_one(name=name):
+                Role(name=name).save()
 
         departments = (
             ("Computer Science", "CSE"),
@@ -135,21 +136,13 @@ def create_app(config_class=Config):
             ("Management", "MBA"),
         )
         for name, code in departments:
-            if not Department.query.filter_by(code=code).first():
-                db.session.add(Department(name=name, code=code))
+            if not Department.find_one(code=code):
+                Department(name=name, code=code).save()
 
-        for name in (
-            "Technical",
-            "Cultural",
-            "Sports",
-            "Workshop",
-            "Seminar",
-            "Fest",
-        ):
-            if not EventCategory.query.filter_by(name=name).first():
-                db.session.add(EventCategory(name=name))
+        for name in ("Technical", "Cultural", "Sports", "Workshop", "Seminar", "Fest"):
+            if not EventCategory.find_one(name=name):
+                EventCategory(name=name).save()
 
-        from app.models import Resource
         default_resources = [
             ("Main Auditorium", "Auditorium", "Block A, Ground Floor", 500),
             ("Seminar Hall 1", "Seminar Hall", "Block B, 1st Floor", 120),
@@ -161,30 +154,26 @@ def create_app(config_class=Config):
             ("Library Hall", "Seminar Hall", "Library Block, 1st Floor", 80),
         ]
         for res_name, res_type, location, capacity in default_resources:
-            if not Resource.query.filter_by(name=res_name).first():
-                db.session.add(Resource(
+            if not Resource.find_one(name=res_name):
+                Resource(
                     name=res_name,
                     resource_type=res_type,
                     location=location,
                     capacity=capacity,
                     is_active=True,
-                ))
+                ).save()
 
-        db.session.commit()
-        print("Database initialized.")
+        print("Firestore collections initialized.")
 
     @app.cli.command("create-admin")
     def create_admin():
-        """Securely create or update the initial administrator account."""
+        """Securely create or update an administrator account in Firestore."""
         import getpass
-        from app.models import Role, Department, User
+        from app.models import Department, Role, User
 
-        db.create_all()
-        role = Role.query.filter_by(name="admin").first()
+        role = Role.find_one(name="admin")
         if not role:
-            role = Role(name="admin")
-            db.session.add(role)
-            db.session.flush()
+            role = Role(name="admin").save()
 
         email = input("Administrator email: ").strip().lower()
         full_name = input("Administrator full name: ").strip()
@@ -197,103 +186,91 @@ def create_app(config_class=Config):
         if password != confirm:
             raise RuntimeError("Passwords do not match.")
 
-        user = User.query.filter_by(email=email).first()
+        user = User.find_one(email=email)
         if user:
             if user.role_id != role.id:
                 raise RuntimeError("The email belongs to a non-admin account.")
             user.full_name = full_name
             user.is_active = True
         else:
+            departments = Department.all()
             user = User(
                 full_name=full_name,
                 email=email,
                 student_id="ADMIN-" + email.split("@")[0],
                 role=role,
-                department=Department.query.first(),
+                department=departments[0] if departments else None,
             )
-            db.session.add(user)
         user.set_password(password)
-        db.session.commit()
-        print("Administrator account created. Change the password after first login.")
+        user.save()
+        print("Administrator account created in Firestore. Change the password after first login.")
 
     @app.cli.command("seed-demo")
     def seed_demo():
-        """Create idempotent demo accounts and data for local testing."""
-        from datetime import date, time, timedelta, datetime
+        """Create idempotent demo accounts and data in Firestore for local testing."""
+        from datetime import date, datetime, time, timedelta
         from app.models import (
-            Role,
             Department,
-            EventCategory,
-            User,
             Event,
-            Resource,
+            EventCategory,
             EventRegistration,
+            Resource,
+            Role,
+            User,
             VolunteerApplication,
             VolunteerAssignment,
             VolunteerTask,
         )
 
-        db.create_all()
-        department = Department.query.first()
-        if not department:
-            department = Department(name="Computer Science", code="CSE")
-            db.session.add(department)
+        departments = Department.all()
+        department = departments[0] if departments else Department(name="Computer Science", code="CSE").save()
+
         for name in ("Technical", "Cultural", "Sports", "Workshop", "Seminar", "Fest"):
-            if not EventCategory.query.filter_by(name=name).first():
-                db.session.add(EventCategory(name=name))
-        for name in ("admin", "coordinator", "student"):
-            if not Role.query.filter_by(name=name).first():
-                db.session.add(Role(name=name))
-        db.session.flush()
+            if not EventCategory.find_one(name=name):
+                EventCategory(name=name).save()
 
         for name in ("admin", "coordinator", "student"):
-            if not Role.query.filter_by(name=name).first():
-                db.session.add(Role(name=name))
-        db.session.flush()
+            if not Role.find_one(name=name):
+                Role(name=name).save()
 
         demo_accounts = (
             ("admin@college.edu", "Demo Admin", "admin", "ADM001"),
             ("coordinator@college.edu", "Demo Coordinator", "coordinator", "COORD001"),
             ("student@college.edu", "Demo Student", "student", "STU001"),
         )
-        department = Department.query.first()
         for email, name, role_name, student_id in demo_accounts:
-            user = User.query.filter_by(email=email).first()
-            if not user:
+            if not User.find_one(email=email):
                 user = User(
                     full_name=name,
                     email=email,
                     student_id=student_id,
-                    role=Role.query.filter_by(name=role_name).first(),
+                    role=Role.find_one(name=role_name),
                     department=department,
                 )
                 user.set_password("CampusDemo123!")
-                db.session.add(user)
-        db.session.flush()
+                user.save()
 
-        coordinator = User.query.filter_by(email="coordinator@college.edu").first()
-        category = EventCategory.query.filter_by(name="Technical").first()
-        if coordinator and category and not Event.query.filter_by(title="Campus Innovation Expo").first():
-            db.session.add(
-                Event(
-                    title="Campus Innovation Expo",
-                    slug="campus-innovation-expo",
-                    description="A campus showcase of student projects, prototypes, and technical innovations.",
-                    category=category,
-                    coordinator=coordinator,
-                    department=department,
-                    venue="Main Auditorium",
-                    organizer="Computer Science Department",
-                    event_date=date.today() + timedelta(days=14),
-                    start_time=time(10, 0),
-                    end_time=time(15, 0),
-                    registration_deadline=datetime.now() + timedelta(days=10),
-                    capacity=200,
-                    volunteer_requirement=12,
-                    status="published",
-                )
-            )
-        # Seed default campus resources
+        coordinator = User.find_one(email="coordinator@college.edu")
+        category = EventCategory.find_one(name="Technical")
+        if coordinator and category and not Event.find_one(title="Campus Innovation Expo"):
+            Event(
+                title="Campus Innovation Expo",
+                slug="campus-innovation-expo",
+                description="A campus showcase of student projects, prototypes, and technical innovations.",
+                category=category,
+                coordinator=coordinator,
+                department=department,
+                venue="Main Auditorium",
+                organizer="Computer Science Department",
+                event_date=date.today() + timedelta(days=14),
+                start_time=time(10, 0),
+                end_time=time(15, 0),
+                registration_deadline=datetime.now() + timedelta(days=10),
+                capacity=200,
+                volunteer_requirement=12,
+                status="published",
+            ).save()
+
         default_resources = [
             ("Main Auditorium", "Auditorium", "Block A, Ground Floor", 500),
             ("Seminar Hall 1", "Seminar Hall", "Block B, 1st Floor", 120),
@@ -305,31 +282,26 @@ def create_app(config_class=Config):
             ("Library Hall", "Seminar Hall", "Library Block, 1st Floor", 80),
         ]
         for res_name, res_type, location, capacity in default_resources:
-            if not Resource.query.filter_by(name=res_name).first():
-                db.session.add(Resource(
+            if not Resource.find_one(name=res_name):
+                Resource(
                     name=res_name,
                     resource_type=res_type,
                     location=location,
                     capacity=capacity,
                     is_active=True,
-                ))
+                ).save()
 
-        # Seed demo student engagement (registration, volunteer assignment, and assigned tasks)
-        student_user = User.query.filter_by(email="student@college.edu").first()
-        expo_event = Event.query.filter_by(title="Campus Innovation Expo").first()
+        student_user = User.find_one(email="student@college.edu")
+        expo_event = Event.find_one(title="Campus Innovation Expo")
         if student_user and expo_event:
-            import uuid
-            if not EventRegistration.query.filter_by(event_id=expo_event.id, student_id=student_user.id).first():
-                db.session.add(
-                    EventRegistration(
-                        event_id=expo_event.id,
-                        student_id=student_user.id,
-                        status="confirmed",
-                    )
-                )
-                db.session.flush()
+            if not EventRegistration.find_one(event_id=expo_event.id, student_id=student_user.id):
+                EventRegistration(
+                    event_id=expo_event.id,
+                    student_id=student_user.id,
+                    status="confirmed",
+                ).save()
 
-            app_rec = VolunteerApplication.query.filter_by(event_id=expo_event.id, student_id=student_user.id).first()
+            app_rec = VolunteerApplication.find_one(event_id=expo_event.id, student_id=student_user.id)
             if not app_rec:
                 app_rec = VolunteerApplication(
                     event_id=expo_event.id,
@@ -338,43 +310,34 @@ def create_app(config_class=Config):
                     availability="Flexible",
                     experience="Helped organize high school tech fair and department orientation.",
                     status="approved",
-                )
-                db.session.add(app_rec)
-                db.session.flush()
+                ).save()
 
-            assignment = VolunteerAssignment.query.filter_by(application_id=app_rec.id).first()
+            assignment = VolunteerAssignment.find_one(application_id=app_rec.id)
             if not assignment:
                 assignment = VolunteerAssignment(
                     application_id=app_rec.id,
                     volunteer_role="Registration Desk Lead",
                     responsibilities="Coordinate desk check-in and attendee kits",
-                )
-                db.session.add(assignment)
-                db.session.flush()
+                ).save()
 
-            if not VolunteerTask.query.filter_by(assignment_id=assignment.id).first():
-                db.session.add(
-                    VolunteerTask(
-                        event_id=expo_event.id,
-                        assignment_id=assignment.id,
-                        title="Prepare attendee kits and badges",
-                        description="Assemble welcome badges, ID lanyards, and event schedules for incoming participants.",
-                        deadline=datetime.now() + timedelta(days=5),
-                        status="assigned",
-                    )
-                )
-                db.session.add(
-                    VolunteerTask(
-                        event_id=expo_event.id,
-                        assignment_id=assignment.id,
-                        title="Setup registration desk and QR scanners",
-                        description="Check desk connectivity, test scanner stations, and verify attendee check-in software.",
-                        deadline=datetime.now() + timedelta(days=12),
-                        status="in_progress",
-                    )
-                )
+            if not VolunteerTask.find_one(assignment_id=assignment.id):
+                VolunteerTask(
+                    event_id=expo_event.id,
+                    assignment_id=assignment.id,
+                    title="Prepare attendee kits and badges",
+                    description="Assemble welcome badges, ID lanyards, and event schedules for incoming participants.",
+                    deadline=datetime.now() + timedelta(days=5),
+                    status="assigned",
+                ).save()
+                VolunteerTask(
+                    event_id=expo_event.id,
+                    assignment_id=assignment.id,
+                    title="Setup registration desk and QR scanners",
+                    description="Check desk connectivity, test scanner stations, and verify attendee check-in software.",
+                    deadline=datetime.now() + timedelta(days=12),
+                    status="in_progress",
+                ).save()
 
-        db.session.commit()
-        print("Demo data initialized.")
+        print("Demo data initialized in Firestore.")
 
     return app

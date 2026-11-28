@@ -1,14 +1,14 @@
+from collections import defaultdict
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from datetime import date, datetime
 from pathlib import Path
 import uuid
 
 from flask import abort, current_app, flash, redirect, render_template, request, send_from_directory, url_for
 from flask_login import current_user
-from werkzeug.utils import secure_filename
 from PIL import Image
+from werkzeug.utils import secure_filename
 
-from app import db
 from app.advanced import advanced
 from app.decorators import roles_required
 from app.models import (
@@ -24,7 +24,7 @@ from app.models import (
     VolunteerApplication,
     VolunteerHours,
 )
-from app.notifications.routes import notify
+from app.notifications.routes import notify_many
 
 
 def save_gallery_image(file):
@@ -52,7 +52,7 @@ def save_gallery_image(file):
 
 @advanced.route("/gallery/event/<int:event_id>", methods=["GET", "POST"])
 def event_gallery(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if request.method == "POST":
@@ -64,19 +64,18 @@ def event_gallery(event_id):
         if not image_path:
             flash("Upload a JPG, PNG, or WebP image.", "danger")
             return redirect(url_for("advanced.event_gallery", event_id=event_id))
-        db.session.add(
-            EventGallery(
-                event_id=event_id,
-                image_path=image_path,
-                caption=request.form.get("caption", "").strip() or None,
-                uploaded_by=current_user.id,
-            )
-        )
-        db.session.commit()
+        EventGallery(
+            event_id=event_id,
+            image_path=image_path,
+            caption=request.form.get("caption", "").strip() or None,
+            uploaded_by=current_user.id,
+        ).save()
         flash("Gallery image uploaded.", "success")
-    items = EventGallery.query.filter_by(event_id=event_id).order_by(
-        EventGallery.created_at.desc()
-    ).all()
+    items = sorted(
+        EventGallery.where(event_id=event_id),
+        key=lambda item: item.created_at,
+        reverse=True,
+    )
     return render_template("advanced/gallery.html", event=event, items=items)
 
 
@@ -87,19 +86,18 @@ def gallery_file(filename):
 
 @advanced.route("/leaderboard")
 def leaderboard():
-    rows = (
-        db.session.query(
-            User.id,
-            User.full_name,
-            User.student_id,
-            db.func.coalesce(db.func.sum(VolunteerHours.hours), 0),
-        )
-        .outerjoin(VolunteerHours, VolunteerHours.student_id == User.id)
-        .group_by(User.id, User.full_name, User.student_id)
-        .having(db.func.coalesce(db.func.sum(VolunteerHours.hours), 0) > 0)
-        .order_by(db.func.sum(VolunteerHours.hours).desc(), User.full_name.asc())
-        .all()
-    )
+    totals = defaultdict(Decimal)
+    for record in VolunteerHours.all():
+        totals[record.student_id] += Decimal(str(record.hours))
+
+    rows = []
+    for student_id, total_hours in totals.items():
+        if total_hours > 0:
+            user = User.get(student_id)
+            if user:
+                rows.append((user.id, user.full_name, user.student_id, total_hours))
+    rows.sort(key=lambda r: (-r[3], r[1]))
+
     if current_user.is_authenticated:
         return render_template("advanced/leaderboard_dashboard.html", rows=rows)
     return render_template("advanced/leaderboard.html", rows=rows)
@@ -119,40 +117,37 @@ def record_hours():
         if hours < 0:
             flash("Hours cannot be negative.", "danger")
             return redirect(url_for("advanced.record_hours"))
-        event = db.session.get(Event, event_id) if event_id else None
-        student = db.session.get(User, student_id) if student_id else None
+        event = Event.get(event_id) if event_id else None
+        student = User.get(student_id) if student_id else None
         if not event or not student:
             flash("Select a valid event and student.", "danger")
             return redirect(url_for("advanced.record_hours"))
         if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
             abort(403)
-        approved = VolunteerApplication.query.filter_by(
+        approved = VolunteerApplication.find_one(
             event_id=event.id,
             student_id=student.id,
             status="approved",
-        ).first()
+        )
         if not approved:
             flash("Volunteer hours can only be recorded for approved volunteers.", "danger")
             return redirect(url_for("advanced.record_hours"))
-        db.session.add(
-            VolunteerHours(
-                student_id=student.id,
-                event_id=event.id,
-                hours=hours,
-                note=request.form.get("note", "").strip() or None,
-                recorded_by=current_user.id,
-            )
-        )
-        db.session.commit()
+        VolunteerHours(
+            student_id=student.id,
+            event_id=event.id,
+            hours=hours,
+            note=request.form.get("note", "").strip() or None,
+            recorded_by=current_user.id,
+        ).save()
         flash("Volunteer hours recorded.", "success")
-    event_list = Event.query.order_by(Event.event_date.desc()).all()
-    approved_students = (
-        db.session.query(User)
-        .join(VolunteerApplication, VolunteerApplication.student_id == User.id)
-        .filter(VolunteerApplication.status == "approved")
-        .distinct()
-        .order_by(User.full_name)
-        .all()
+
+    event_list = sorted(Event.all(), key=lambda e: e.event_date, reverse=True)
+    approved_student_ids = {
+        app_rec.student_id for app_rec in VolunteerApplication.where(status="approved")
+    }
+    approved_students = sorted(
+        [user for sid in approved_student_ids if (user := User.get(sid)) is not None],
+        key=lambda u: u.full_name,
     )
     return render_template(
         "advanced/hours.html",
@@ -164,9 +159,11 @@ def record_hours():
 @advanced.route("/student/hours")
 @roles_required("student")
 def student_hours():
-    items = VolunteerHours.query.filter_by(student_id=current_user.id).order_by(
-        VolunteerHours.recorded_at.desc()
-    ).all()
+    items = sorted(
+        VolunteerHours.where(student_id=current_user.id),
+        key=lambda item: item.recorded_at,
+        reverse=True,
+    )
     total = sum((Decimal(str(item.hours)) for item in items), Decimal("0"))
     return render_template("advanced/student_hours.html", items=items, total=total)
 
@@ -174,12 +171,12 @@ def student_hours():
 @advanced.route("/budget/event/<int:event_id>", methods=["GET", "POST"])
 @roles_required("coordinator", "admin")
 def event_budget(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
         abort(403)
-    budget = EventBudget.query.filter_by(event_id=event_id).first()
+    budget = EventBudget.find_one(event_id=event_id)
     if request.method == "POST" and request.form.get("form_type") == "budget":
         try:
             amount = Decimal(request.form.get("allocated_amount", ""))
@@ -190,12 +187,10 @@ def event_budget(event_id):
             flash("Budget cannot be negative.", "danger")
         elif budget:
             budget.allocated_amount = amount
-            db.session.commit()
+            budget.save()
             flash("Budget updated.", "success")
         else:
-            budget = EventBudget(event_id=event_id, allocated_amount=amount)
-            db.session.add(budget)
-            db.session.commit()
+            budget = EventBudget(event_id=event_id, allocated_amount=amount).save()
             flash("Budget created.", "success")
     if request.method == "POST" and request.form.get("form_type") == "expense":
         if not budget:
@@ -210,16 +205,13 @@ def event_budget(event_id):
         if amount < 0:
             flash("Expense cannot be negative.", "danger")
         else:
-            db.session.add(
-                EventExpense(
-                    budget_id=budget.id,
-                    category=request.form.get("category", "").strip() or "Other",
-                    description=request.form.get("description", "").strip() or None,
-                    amount=amount,
-                    expense_date=expense_date,
-                )
-            )
-            db.session.commit()
+            EventExpense(
+                budget_id=budget.id,
+                category=request.form.get("category", "").strip() or "Other",
+                description=request.form.get("description", "").strip() or None,
+                amount=amount,
+                expense_date=expense_date,
+            ).save()
             flash("Expense added.", "success")
     expenses = budget.expenses if budget else []
     spent = sum((Decimal(str(expense.amount)) for expense in expenses), Decimal("0"))
@@ -247,31 +239,28 @@ def resources():
             capacity = None
         if not name or not resource_type:
             flash("Resource name and type are required.", "danger")
-        elif Resource.query.filter_by(name=name).first():
+        elif Resource.find_one(name=name):
             flash("A resource with that name already exists.", "danger")
         else:
-            db.session.add(
-                Resource(
-                    name=name,
-                    resource_type=resource_type,
-                    location=location,
-                    capacity=capacity or None,
-                )
-            )
-            db.session.commit()
+            Resource(
+                name=name,
+                resource_type=resource_type,
+                location=location,
+                capacity=capacity or None,
+            ).save()
             flash("Resource created.", "success")
-    items = Resource.query.order_by(Resource.name).all()
+    items = sorted(Resource.all(), key=lambda r: r.name)
     return render_template("advanced/resources.html", items=items)
 
 
 @advanced.route("/resources/<int:resource_id>/toggle", methods=["POST"])
 @roles_required("admin")
 def toggle_resource(resource_id):
-    resource = db.session.get(Resource, resource_id)
+    resource = Resource.get(resource_id)
     if not resource:
         abort(404)
     resource.is_active = not resource.is_active
-    db.session.commit()
+    resource.save()
     status = "activated" if resource.is_active else "deactivated"
     flash(f"Resource '{resource.name}' {status}.", "success")
     return redirect(url_for("advanced.resources"))
@@ -292,62 +281,64 @@ def book_resource():
         if end_time <= start_time:
             flash("End time must be after start time.", "danger")
             return redirect(url_for("advanced.book_resource"))
-        conflict = ResourceBooking.query.filter(
-            ResourceBooking.resource_id == resource_id,
-            ResourceBooking.status == "confirmed",
-            ResourceBooking.booking_date == booking_date,
-            ResourceBooking.start_time < end_time,
-            ResourceBooking.end_time > start_time,
-        ).first()
+
+        conflict = any(
+            b.booking_date == booking_date
+            and b.start_time < end_time
+            and b.end_time > start_time
+            for b in ResourceBooking.where(resource_id=resource_id, status="confirmed")
+        )
         if conflict:
             flash("This resource is already booked during that time.", "danger")
             return redirect(url_for("advanced.book_resource"))
-        resource = db.session.get(Resource, resource_id)
+
+        resource = Resource.get(resource_id)
         if not resource or not resource.is_active:
             flash("Choose an active resource.", "danger")
             return redirect(url_for("advanced.book_resource"))
+
         event_id = request.form.get("event_id", type=int) or None
         department_id = request.form.get("department_id", type=int) or None
         purpose = request.form.get("purpose", "").strip()
-        db.session.add(
-            ResourceBooking(
-                resource_id=resource_id,
-                event_id=event_id,
-                requester_id=current_user.id,
-                purpose=purpose,
-                booking_date=booking_date,
-                start_time=start_time,
-                end_time=end_time,
-            )
-        )
+        ResourceBooking(
+            resource_id=resource_id,
+            event_id=event_id,
+            requester_id=current_user.id,
+            purpose=purpose,
+            booking_date=booking_date,
+            start_time=start_time,
+            end_time=end_time,
+        ).save()
+
         notified_count = 0
-        department = db.session.get(Department, department_id) if department_id else None
+        department = Department.get(department_id) if department_id else None
         if department:
-            student_role = Role.query.filter_by(name="student").first()
+            student_role = Role.find_one(name="student")
             if student_role:
-                students = User.query.filter_by(
-                    role_id=student_role.id,
-                    department_id=department.id,
-                    is_active=True,
-                ).all()
+                students = [
+                    u
+                    for u in User.where(role_id=student_role.id, department_id=department.id)
+                    if u.is_active
+                ]
                 date_str = booking_date.strftime("%d %b %Y")
                 time_str = f"{start_time.strftime('%I:%M %p')}–{end_time.strftime('%I:%M %p')}"
-                linked_event = db.session.get(Event, event_id) if event_id else None
+                linked_event = Event.get(event_id) if event_id else None
                 event_label = linked_event.title if linked_event else (purpose or resource.name)
                 link = (
                     url_for("events.detail", event_id=linked_event.id)
                     if linked_event
                     else url_for("community.calendar_view")
                 )
-                for student in students:
-                    notify(
+                notify_many([
+                    (
                         student.id,
                         f"{department.name} event scheduled",
                         f"{event_label} is scheduled at {resource.name} on {date_str} ({time_str}).",
-                        link=link,
+                        link,
                     )
+                    for student in students
+                ])
                 notified_count = len(students)
-        db.session.commit()
         if department:
             flash(
                 f"Resource booked. Notified {notified_count} student(s) in {department.name}.",
@@ -355,7 +346,8 @@ def book_resource():
             )
         else:
             flash("Resource booked.", "success")
-    if Resource.query.count() == 0:
+
+    if Resource.count() == 0:
         default_resources = [
             ("Main Auditorium", "Auditorium", "Block A, Ground Floor", 500),
             ("Seminar Hall 1", "Seminar Hall", "Block B, 1st Floor", 120),
@@ -367,27 +359,28 @@ def book_resource():
             ("Library Hall", "Seminar Hall", "Library Block, 1st Floor", 80),
         ]
         for res_name, res_type, location, capacity in default_resources:
-            db.session.add(
-                Resource(
-                    name=res_name,
-                    resource_type=res_type,
-                    location=location,
-                    capacity=capacity,
-                    is_active=True,
-                )
-            )
-        db.session.commit()
+            Resource(
+                name=res_name,
+                resource_type=res_type,
+                location=location,
+                capacity=capacity,
+                is_active=True,
+            ).save()
 
-    resources = Resource.query.filter_by(is_active=True).order_by(Resource.name).all()
-    bookings = ResourceBooking.query.filter_by(status="confirmed").order_by(
-        ResourceBooking.booking_date,
-        ResourceBooking.start_time,
-    ).all()
-    event_list = Event.query.filter_by(coordinator_id=current_user.id).all() if current_user.role_name == "coordinator" else Event.query.all()
-    departments = Department.query.order_by(Department.name).all()
+    resources_list = sorted(Resource.where(is_active=True), key=lambda r: r.name)
+    bookings = sorted(
+        ResourceBooking.where(status="confirmed"),
+        key=lambda b: (b.booking_date, b.start_time),
+    )
+    event_list = (
+        Event.where(coordinator_id=current_user.id)
+        if current_user.role_name == "coordinator"
+        else Event.all()
+    )
+    departments = sorted(Department.all(), key=lambda d: d.name)
     return render_template(
         "advanced/bookings.html",
-        resources=resources,
+        resources=resources_list,
         bookings=bookings,
         event_list=event_list,
         departments=departments,

@@ -1,12 +1,12 @@
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timezone
 
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
-from app import db
 from app.assistance import assistance
 from app.decorators import roles_required
+from app.firestore_db import batch_write, next_id
 from app.models import (
     Event,
     EventCategory,
@@ -28,26 +28,21 @@ THEME_KEYWORDS = {
 
 
 def recommend_events(student_id, limit=6):
-    registered_ids = [
-        registration.event_id
-        for registration in EventRegistration.query.filter_by(student_id=student_id).all()
+    registrations = EventRegistration.where(student_id=student_id)
+    registered_ids = {reg.event_id for reg in registrations}
+    interest_ids = {interest.category_id for interest in StudentInterest.where(student_id=student_id)}
+    attended_category_ids = {
+        reg.event.category_id
+        for reg in registrations
+        if reg.event and reg.event.category_id is not None
+    }
+
+    today = date.today()
+    events = [
+        event
+        for event in Event.where(status="published")
+        if event.event_date and event.event_date >= today and event.id not in registered_ids
     ]
-    interest_ids = [
-        interest.category_id
-        for interest in StudentInterest.query.filter_by(student_id=student_id).all()
-    ]
-    attended_category_ids = [
-        registration.event.category_id
-        for registration in EventRegistration.query.filter_by(student_id=student_id).all()
-        if registration.event
-    ]
-    query = Event.query.filter(
-        Event.status == "published",
-        Event.event_date >= date.today(),
-    )
-    if registered_ids:
-        query = query.filter(~Event.id.in_(registered_ids))
-    events = query.order_by(Event.event_date.asc()).all()
 
     scored = []
     for event in events:
@@ -66,12 +61,12 @@ def recommend_events(student_id, limit=6):
 @assistance.route("/recommendations")
 @roles_required("student")
 def recommendations():
-    recommendations = recommend_events(current_user.id)
-    interests = StudentInterest.query.filter_by(student_id=current_user.id).all()
-    categories = EventCategory.query.order_by(EventCategory.name).all()
+    recs = recommend_events(current_user.id)
+    interests = StudentInterest.where(student_id=current_user.id)
+    categories = sorted(EventCategory.all(), key=lambda c: c.name)
     return render_template(
         "assistance/recommendations.html",
-        recommendations=recommendations,
+        recommendations=recs,
         interests=interests,
         categories=categories,
     )
@@ -80,21 +75,35 @@ def recommendations():
 @assistance.route("/interests", methods=["POST"])
 @roles_required("student")
 def save_interests():
-    category_ids = [
+    category_ids = {
         int(value)
         for value in request.form.getlist("category_ids")
         if value.isdigit()
-    ]
-    StudentInterest.query.filter_by(student_id=current_user.id).delete()
+    }
+    existing = StudentInterest.where(student_id=current_user.id)
     valid_ids = {
-        category.id
-        for category in EventCategory.query.filter(EventCategory.id.in_(category_ids)).all()
+        cat.id for cat in EventCategory.all() if cat.id in category_ids
     } if category_ids else set()
-    db.session.add_all([
-        StudentInterest(student_id=current_user.id, category_id=category_id)
-        for category_id in valid_ids
-    ])
-    db.session.commit()
+
+    ops = [
+        ("delete", StudentInterest.collection_name, item.id)
+        for item in existing
+    ]
+    now = datetime.now(timezone.utc)
+    for cat_id in sorted(valid_ids):
+        doc_id = next_id(StudentInterest.collection_name)
+        ops.append((
+            "set",
+            StudentInterest.collection_name,
+            doc_id,
+            {
+                "id": doc_id,
+                "student_id": current_user.id,
+                "category_id": cat_id,
+                "created_at": now,
+            },
+        ))
+    batch_write(ops)
     flash("Your event interests were updated.", "success")
     return redirect(url_for("assistance.recommendations"))
 
@@ -102,27 +111,26 @@ def save_interests():
 @assistance.route("/volunteer-role/<int:event_id>")
 @roles_required("student")
 def volunteer_role(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         return render_template("assistance/role.html", event=None, role="No event found", reasons=[], event_id=event_id)
 
-    applications = (
-        VolunteerApplication.query.filter_by(student_id=current_user.id)
-        .filter(VolunteerApplication.status.in_(("approved", "rejected")))
-        .all()
-    )
+    applications = [
+        app_rec
+        for app_rec in VolunteerApplication.where(student_id=current_user.id)
+        if app_rec.status in ("approved", "rejected")
+    ]
     role_counts = Counter(
         application.preferred_role
         for application in applications
         if application.preferred_role
     )
     role = role_counts.most_common(1)[0][0] if role_counts else "Registration Desk"
-    reasons = []
-    if role_counts:
-        reasons.append(f"Your previous activity suggests: {role}")
-    else:
-        reasons.append("Registration Desk is the best general starting role")
-
+    reasons = (
+        [f"Your previous activity suggests: {role}"]
+        if role_counts
+        else ["Registration Desk is the best general starting role"]
+    )
     return render_template(
         "assistance/role.html",
         event=event,
@@ -135,13 +143,13 @@ def volunteer_role(event_id):
 @assistance.route("/feedback-analysis/<int:event_id>")
 @roles_required("coordinator", "admin")
 def feedback_analysis(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         return render_template("assistance/feedback.html", event=None, themes=[], average=None)
     if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
         return render_template("assistance/feedback.html", event=None, themes=[], average=None), 403
 
-    items = Feedback.query.filter_by(event_id=event_id).all()
+    items = Feedback.where(event_id=event_id)
     ratings = [item.rating for item in items]
     theme_counts = Counter()
     for item in items:

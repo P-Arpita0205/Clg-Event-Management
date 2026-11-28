@@ -2,8 +2,8 @@ import calendar
 from datetime import date
 
 from flask import abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
-from app import db
 from app.community import community
 from app.decorators import roles_required
 from app.models import Club, Department, Event, ResourceBooking
@@ -12,7 +12,7 @@ from app.models import Club, Department, Event, ResourceBooking
 @community.route("/departments")
 @roles_required("admin")
 def departments():
-    items = Department.query.order_by(Department.name).all()
+    items = sorted(Department.all(), key=lambda d: d.name)
     return render_template("community/departments.html", items=items)
 
 
@@ -24,13 +24,10 @@ def create_department():
     if not name or not code:
         flash("Department name and code are required.", "danger")
         return redirect(url_for("community.departments"))
-    if Department.query.filter(
-        (Department.name == name) | (Department.code == code)
-    ).first():
+    if Department.find_one(name=name) or Department.find_one(code=code):
         flash("A department with that name or code already exists.", "danger")
         return redirect(url_for("community.departments"))
-    db.session.add(Department(name=name, code=code))
-    db.session.commit()
+    Department(name=name, code=code).save()
     flash("Department created.", "success")
     return redirect(url_for("community.departments"))
 
@@ -38,14 +35,13 @@ def create_department():
 @community.route("/departments/<int:department_id>/delete", methods=["POST"])
 @roles_required("admin")
 def delete_department(department_id):
-    department = db.session.get(Department, department_id)
+    department = Department.get(department_id)
     if not department:
         abort(404)
     if department.users:
         flash("Departments assigned to users cannot be deleted.", "danger")
         return redirect(url_for("community.departments"))
-    db.session.delete(department)
-    db.session.commit()
+    department.delete()
     flash("Department deleted.", "success")
     return redirect(url_for("community.departments"))
 
@@ -53,7 +49,7 @@ def delete_department(department_id):
 @community.route("/clubs")
 @roles_required("admin")
 def clubs():
-    items = Club.query.order_by(Club.name).all()
+    items = sorted(Club.all(), key=lambda c: c.name)
     return render_template("community/clubs.html", items=items)
 
 
@@ -65,17 +61,10 @@ def create_club():
     if not name:
         flash("Club name is required.", "danger")
         return redirect(url_for("community.clubs"))
-    if Club.query.filter_by(name=name).first():
+    if Club.find_one(name=name):
         flash("A club with that name already exists.", "danger")
         return redirect(url_for("community.clubs"))
-    db.session.add(
-        Club(
-            name=name,
-            description=description or None,
-            is_active=True,
-        )
-    )
-    db.session.commit()
+    Club(name=name, description=description or None, is_active=True).save()
     flash("Club created.", "success")
     return redirect(url_for("community.clubs"))
 
@@ -83,11 +72,11 @@ def create_club():
 @community.route("/clubs/<int:club_id>/toggle", methods=["POST"])
 @roles_required("admin")
 def toggle_club(club_id):
-    club = db.session.get(Club, club_id)
+    club = Club.get(club_id)
     if not club:
         abort(404)
     club.is_active = not club.is_active
-    db.session.commit()
+    club.save()
     flash("Club status updated.", "success")
     return redirect(url_for("community.clubs"))
 
@@ -103,30 +92,28 @@ def calendar_view():
         end = date(year + 1, 1, 1)
     else:
         end = date(year, month + 1, 1)
-    event_list = (
-        Event.query.filter(
-            Event.status == "published",
-            Event.event_date >= start,
-            Event.event_date < end,
-        )
-        .order_by(Event.event_date, Event.start_time)
-        .all()
+
+    event_list = sorted(
+        [
+            event
+            for event in Event.where(status="published")
+            if event.event_date and start <= event.event_date < end
+        ],
+        key=lambda e: (e.event_date, e.start_time),
     )
     events_by_date = {}
     for event in event_list:
         events_by_date.setdefault(event.event_date, []).append(event)
-    from flask_login import current_user
 
     bookings_by_date = {}
     if current_user.is_authenticated and current_user.role_name in ("admin", "coordinator"):
-        booking_list = (
-            ResourceBooking.query.filter(
-                ResourceBooking.status == "confirmed",
-                ResourceBooking.booking_date >= start,
-                ResourceBooking.booking_date < end,
-            )
-            .order_by(ResourceBooking.booking_date, ResourceBooking.start_time)
-            .all()
+        booking_list = sorted(
+            [
+                booking
+                for booking in ResourceBooking.where(status="confirmed")
+                if booking.booking_date and start <= booking.booking_date < end
+            ],
+            key=lambda b: (b.booking_date, b.start_time),
         )
         for booking in booking_list:
             bookings_by_date.setdefault(booking.booking_date, []).append(booking)

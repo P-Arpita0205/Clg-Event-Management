@@ -1,103 +1,279 @@
+"""Domain models backed by Google Cloud Firestore collections."""
+
+from datetime import datetime, time, timezone
+from decimal import Decimal
 import hashlib
 import secrets
-from datetime import datetime, time, timezone
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from app import db, login_manager
+from app import login_manager
+from app.firestore_db import (
+    batch_write,
+    count_docs,
+    create_doc,
+    delete_doc,
+    find_one,
+    get_doc,
+    list_docs,
+    parse_date,
+    parse_datetime,
+    parse_decimal,
+    parse_time,
+    update_doc,
+)
 
 
-class Role(db.Model):
-    __tablename__ = "roles"
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(30), unique=True, nullable=False)
-
-    users = db.relationship("User", back_populates="role")
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 
-class Department(db.Model):
-    __tablename__ = "departments"
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    code = db.Column(db.String(20), unique=True, nullable=False)
-
-    users = db.relationship("User", back_populates="department")
+def _make_attendance_key(prefix, record_id, qr_token):
+    """Build a short verifiable attendance key from a record ID and QR token."""
+    if not record_id or not qr_token:
+        return None
+    digest = hashlib.sha256(qr_token.encode("utf-8")).hexdigest()[:6].upper()
+    return f"{prefix}-{record_id}-{digest}"
 
 
-class Club(db.Model):
-    __tablename__ = "clubs"
+class FirestoreModel:
+    """Base active-record wrapper over a Cloud Firestore collection."""
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    description = db.Column(db.Text)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    collection_name = ""
+    _fields = ()
+
+    def __init__(self, **kwargs):
+        self.id = kwargs.get("id")
+
+    @classmethod
+    def get(cls, doc_id):
+        if doc_id is None:
+            return None
+        try:
+            lookup_id = int(doc_id)
+        except (TypeError, ValueError):
+            return None
+        data = get_doc(cls.collection_name, lookup_id)
+        return cls.from_dict(data) if data else None
+
+    @classmethod
+    def all(cls):
+        return [cls.from_dict(data) for data in list_docs(cls.collection_name)]
+
+    @classmethod
+    def where(cls, **filters):
+        return [cls.from_dict(data) for data in list_docs(cls.collection_name, filters=filters)]
+
+    @classmethod
+    def find_one(cls, **filters):
+        data = find_one(cls.collection_name, **filters)
+        return cls.from_dict(data) if data else None
+
+    @classmethod
+    def count(cls, **filters):
+        return count_docs(cls.collection_name, **filters)
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(**data)
+
+    def to_dict(self):
+        return {field: getattr(self, field) for field in self._fields}
+
+    def save(self):
+        payload = self.to_dict()
+        if self.id is None:
+            created = create_doc(self.collection_name, payload)
+            self.id = created["id"]
+        else:
+            update_doc(self.collection_name, self.id, payload)
+        return self
+
+    def delete(self):
+        if self.id is not None:
+            delete_doc(self.collection_name, self.id)
 
 
-class EventCategory(db.Model):
-    __tablename__ = "event_categories"
+class Role(FirestoreModel):
+    collection_name = "roles"
+    _fields = ("name",)
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    events = db.relationship("Event", back_populates="category")
+    def __init__(self, id=None, name="", **kwargs):
+        super().__init__(id=id)
+        self.name = name
+
+    @property
+    def users(self):
+        return User.where(role_id=self.id) if self.id is not None else []
 
 
-class Event(db.Model):
-    __tablename__ = "events"
+class Department(FirestoreModel):
+    collection_name = "departments"
+    _fields = ("name", "code")
 
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(160), nullable=False)
-    slug = db.Column(db.String(180), unique=True, nullable=False, index=True)
-    description = db.Column(db.Text, nullable=False)
-    poster = db.Column(db.String(255))
-    category_id = db.Column(db.Integer, db.ForeignKey("event_categories.id"), nullable=False, index=True)
-    coordinator_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"), index=True)
-    club_id = db.Column(db.Integer, db.ForeignKey("clubs.id"))
-    venue = db.Column(db.String(160), nullable=False)
-    organizer = db.Column(db.String(160), nullable=False)
-    event_date = db.Column(db.Date, nullable=False, index=True)
-    end_date = db.Column(db.Date, nullable=True)
-    start_time = db.Column(db.Time, nullable=False)
-    end_time = db.Column(db.Time, nullable=False)
-    registration_deadline = db.Column(db.DateTime, nullable=False)
-    capacity = db.Column(db.Integer, nullable=False)
-    volunteer_requirement = db.Column(db.Integer, nullable=False, default=0)
-    registration_compulsory = db.Column(db.Boolean, nullable=False, default=False)
-    status = db.Column(db.String(20), nullable=False, default="draft", index=True)
-    approval_note = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = db.Column(
-        db.DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
+    def __init__(self, id=None, name="", code="", **kwargs):
+        super().__init__(id=id)
+        self.name = name
+        self.code = code
+
+    @property
+    def users(self):
+        return User.where(department_id=self.id) if self.id is not None else []
+
+
+class Club(FirestoreModel):
+    collection_name = "clubs"
+    _fields = ("name", "description", "is_active")
+
+    def __init__(self, id=None, name="", description=None, is_active=True, **kwargs):
+        super().__init__(id=id)
+        self.name = name
+        self.description = description
+        self.is_active = bool(is_active)
+
+
+class EventCategory(FirestoreModel):
+    collection_name = "event_categories"
+    _fields = ("name",)
+
+    def __init__(self, id=None, name="", **kwargs):
+        super().__init__(id=id)
+        self.name = name
+
+    @property
+    def events(self):
+        return Event.where(category_id=self.id) if self.id is not None else []
+
+
+class Event(FirestoreModel):
+    collection_name = "events"
+    _fields = (
+        "title",
+        "slug",
+        "description",
+        "poster",
+        "category_id",
+        "coordinator_id",
+        "department_id",
+        "club_id",
+        "venue",
+        "organizer",
+        "event_date",
+        "end_date",
+        "start_time",
+        "end_time",
+        "registration_deadline",
+        "capacity",
+        "volunteer_requirement",
+        "registration_compulsory",
+        "status",
+        "approval_note",
+        "created_at",
+        "updated_at",
     )
 
-    category = db.relationship("EventCategory", back_populates="events")
-    coordinator = db.relationship("User", foreign_keys=[coordinator_id])
-    department = db.relationship("Department")
-    club = db.relationship("Club")
-    registrations = db.relationship(
-        "EventRegistration", back_populates="event", cascade="all, delete-orphan"
-    )
-    volunteer_applications = db.relationship(
-        "VolunteerApplication", back_populates="event", cascade="all, delete-orphan"
-    )
+    def __init__(
+        self,
+        id=None,
+        title="",
+        slug="",
+        description="",
+        poster=None,
+        category_id=None,
+        category=None,
+        coordinator_id=None,
+        coordinator=None,
+        department_id=None,
+        department=None,
+        club_id=None,
+        club=None,
+        venue="",
+        organizer="",
+        event_date=None,
+        end_date=None,
+        start_time=None,
+        end_time=None,
+        registration_deadline=None,
+        capacity=100000,
+        volunteer_requirement=0,
+        registration_compulsory=False,
+        status="draft",
+        approval_note=None,
+        created_at=None,
+        updated_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.title = title
+        self.slug = slug
+        self.description = description
+        self.poster = poster
+        self.category_id = category.id if category is not None else category_id
+        self.coordinator_id = coordinator.id if coordinator is not None else coordinator_id
+        self.department_id = department.id if department is not None else department_id
+        self.club_id = club.id if club is not None else club_id
+        self.venue = venue
+        self.organizer = organizer
+        self.event_date = parse_date(event_date)
+        self.end_date = parse_date(end_date)
+        self.start_time = parse_time(start_time)
+        self.end_time = parse_time(end_time)
+        self.registration_deadline = parse_datetime(registration_deadline, naive=True)
+        self.capacity = int(capacity) if capacity is not None else 100000
+        self.volunteer_requirement = int(volunteer_requirement or 0)
+        self.registration_compulsory = bool(registration_compulsory)
+        self.status = status or "draft"
+        self.approval_note = approval_note
+        self.created_at = parse_datetime(created_at) or _utcnow()
+        self.updated_at = parse_datetime(updated_at) or _utcnow()
+
+    def save(self):
+        self.updated_at = _utcnow()
+        return super().save()
+
+    @property
+    def category(self):
+        return EventCategory.get(self.category_id)
+
+    @property
+    def coordinator(self):
+        return User.get(self.coordinator_id)
+
+    @property
+    def department(self):
+        return Department.get(self.department_id)
+
+    @property
+    def club(self):
+        return Club.get(self.club_id)
+
+    @property
+    def registrations(self):
+        return EventRegistration.where(event_id=self.id) if self.id is not None else []
+
+    @property
+    def volunteer_applications(self):
+        return VolunteerApplication.where(event_id=self.id) if self.id is not None else []
 
     @property
     def approved_registration_count(self):
-        return sum(1 for registration in self.registrations if registration.status == "confirmed")
+        if self.id is None:
+            return 0
+        return EventRegistration.count(event_id=self.id, status="confirmed")
 
     @property
     def approved_volunteer_count(self):
-        return sum(1 for application in self.volunteer_applications if application.status == "approved")
+        if self.id is None:
+            return 0
+        return VolunteerApplication.count(event_id=self.id, status="approved")
 
     @property
     def volunteer_limit_reached(self):
-        return self.volunteer_requirement > 0 and self.approved_volunteer_count >= self.volunteer_requirement
+        return (
+            self.volunteer_requirement > 0
+            and self.approved_volunteer_count >= self.volunteer_requirement
+        )
 
     @property
     def end_datetime(self):
@@ -121,314 +297,690 @@ class Event(db.Model):
             return False
         return datetime.now() >= self.end_datetime
 
+    def delete_with_related(self):
+        """Delete the event and all dependent Firestore documents in batches."""
+        if self.id is None:
+            return
+        ops = []
+        apps = VolunteerApplication.where(event_id=self.id)
+        for app_rec in apps:
+            assignment = VolunteerAssignment.find_one(application_id=app_rec.id)
+            if assignment:
+                ops.append(("delete", VolunteerAssignment.collection_name, assignment.id))
+            ops.append(("delete", VolunteerApplication.collection_name, app_rec.id))
 
-def _make_attendance_key(prefix, record_id, qr_token):
-    """Build a short verifiable attendance key from a record ID and QR token."""
-    if not record_id or not qr_token:
-        return None
-    digest = hashlib.sha256(qr_token.encode("utf-8")).hexdigest()[:6].upper()
-    return f"{prefix}-{record_id}-{digest}"
+        for budget in EventBudget.where(event_id=self.id):
+            for expense in EventExpense.where(budget_id=budget.id):
+                ops.append(("delete", EventExpense.collection_name, expense.id))
+            ops.append(("delete", EventBudget.collection_name, budget.id))
+
+        for model_cls in (
+            EventRegistration,
+            VolunteerTask,
+            Attendance,
+            Certificate,
+            Feedback,
+            EventGallery,
+            VolunteerHours,
+            ResourceBooking,
+        ):
+            for item in model_cls.where(event_id=self.id):
+                ops.append(("delete", model_cls.collection_name, item.id))
+
+        ops.append(("delete", self.collection_name, self.id))
+        batch_write(ops)
 
 
-class EventRegistration(db.Model):
-    __tablename__ = "event_registrations"
+class EventRegistration(FirestoreModel):
+    collection_name = "event_registrations"
+    _fields = ("event_id", "student_id", "status", "qr_token", "registered_at")
 
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="confirmed")
-    qr_token = db.Column(db.String(64), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(32))
-    registered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        student_id=None,
+        student=None,
+        status="confirmed",
+        qr_token=None,
+        registered_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.student_id = student.id if student is not None else student_id
+        self.status = status or "confirmed"
+        self.qr_token = qr_token or secrets.token_urlsafe(32)
+        self.registered_at = parse_datetime(registered_at) or _utcnow()
 
-    event = db.relationship("Event", back_populates="registrations")
-    student = db.relationship("User")
+    @property
+    def event(self):
+        return Event.get(self.event_id)
+
+    @property
+    def student(self):
+        return User.get(self.student_id)
 
     @property
     def attendance_key(self):
         return _make_attendance_key("P", self.id, self.qr_token)
 
-    __table_args__ = (
-        db.UniqueConstraint("event_id", "student_id", name="uq_event_student_registration"),
-        db.Index("ix_event_registration_status", "event_id", "status"),
+
+class VolunteerApplication(FirestoreModel):
+    collection_name = "volunteer_applications"
+    _fields = (
+        "event_id",
+        "student_id",
+        "availability",
+        "experience",
+        "preferred_role",
+        "status",
+        "qr_token",
+        "reviewed_at",
+        "reviewer_note",
+        "created_at",
     )
 
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        student_id=None,
+        student=None,
+        availability="Flexible",
+        experience=None,
+        preferred_role=None,
+        status="pending",
+        qr_token=None,
+        reviewed_at=None,
+        reviewer_note=None,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.student_id = student.id if student is not None else student_id
+        self.availability = availability or "Flexible"
+        self.experience = experience
+        self.preferred_role = preferred_role
+        self.status = status or "pending"
+        self.qr_token = qr_token or secrets.token_urlsafe(32)
+        self.reviewed_at = parse_datetime(reviewed_at)
+        self.reviewer_note = reviewer_note
+        self.created_at = parse_datetime(created_at) or _utcnow()
 
-class VolunteerApplication(db.Model):
-    __tablename__ = "volunteer_applications"
+    @property
+    def event(self):
+        return Event.get(self.event_id)
 
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    availability = db.Column(db.String(255), nullable=True, default="Flexible")
-    experience = db.Column(db.Text)
-    preferred_role = db.Column(db.String(100))
-    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
-    qr_token = db.Column(db.String(64), unique=True, nullable=True, default=lambda: secrets.token_urlsafe(32))
-    reviewed_at = db.Column(db.DateTime)
-    reviewer_note = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    @property
+    def student(self):
+        return User.get(self.student_id)
 
-    event = db.relationship("Event", back_populates="volunteer_applications")
-    student = db.relationship("User")
-    assignment = db.relationship(
-        "VolunteerAssignment", back_populates="application", uselist=False
-    )
+    @property
+    def assignment(self):
+        if self.id is None:
+            return None
+        return VolunteerAssignment.find_one(application_id=self.id)
 
     @property
     def attendance_key(self):
         return _make_attendance_key("V", self.id, self.qr_token)
 
-    __table_args__ = (
-        db.UniqueConstraint("event_id", "student_id", name="uq_event_student_application"),
-        db.Index("ix_volunteer_application_status", "event_id", "status"),
+
+class VolunteerAssignment(FirestoreModel):
+    collection_name = "volunteer_assignments"
+    _fields = ("application_id", "volunteer_role", "responsibilities", "assigned_at")
+
+    def __init__(
+        self,
+        id=None,
+        application_id=None,
+        application=None,
+        volunteer_role="",
+        responsibilities=None,
+        assigned_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.application_id = application.id if application is not None else application_id
+        self.volunteer_role = volunteer_role
+        self.responsibilities = responsibilities
+        self.assigned_at = parse_datetime(assigned_at) or _utcnow()
+
+    @property
+    def application(self):
+        return VolunteerApplication.get(self.application_id)
+
+
+class VolunteerTask(FirestoreModel):
+    collection_name = "volunteer_tasks"
+    _fields = (
+        "event_id",
+        "assignment_id",
+        "title",
+        "description",
+        "deadline",
+        "status",
+        "created_at",
+        "updated_at",
     )
 
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        assignment_id=None,
+        assignment=None,
+        title="",
+        description=None,
+        deadline=None,
+        status="assigned",
+        created_at=None,
+        updated_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.assignment_id = assignment.id if assignment is not None else assignment_id
+        self.title = title
+        self.description = description
+        self.deadline = parse_datetime(deadline, naive=True)
+        self.status = status or "assigned"
+        self.created_at = parse_datetime(created_at) or _utcnow()
+        self.updated_at = parse_datetime(updated_at) or _utcnow()
 
-class VolunteerAssignment(db.Model):
-    __tablename__ = "volunteer_assignments"
+    def save(self):
+        self.updated_at = _utcnow()
+        return super().save()
 
-    id = db.Column(db.Integer, primary_key=True)
-    application_id = db.Column(db.Integer, db.ForeignKey("volunteer_applications.id"), unique=True, nullable=False)
-    volunteer_role = db.Column(db.String(100), nullable=False)
-    responsibilities = db.Column(db.Text)
-    assigned_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    @property
+    def event(self):
+        return Event.get(self.event_id)
 
-    application = db.relationship("VolunteerApplication", back_populates="assignment")
+    @property
+    def assignment(self):
+        return VolunteerAssignment.get(self.assignment_id)
 
 
-class VolunteerTask(db.Model):
-    __tablename__ = "volunteer_tasks"
-
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    assignment_id = db.Column(db.Integer, db.ForeignKey("volunteer_assignments.id"), nullable=False)
-    title = db.Column(db.String(160), nullable=False)
-    description = db.Column(db.Text)
-    deadline = db.Column(db.DateTime)
-    status = db.Column(db.String(20), nullable=False, default="assigned", index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = db.Column(
-        db.DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
+class Attendance(FirestoreModel):
+    collection_name = "attendance"
+    _fields = (
+        "event_id",
+        "student_id",
+        "registration_id",
+        "volunteer_application_id",
+        "checked_in_at",
+        "method",
     )
 
-    event = db.relationship("Event")
-    assignment = db.relationship("VolunteerAssignment")
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        student_id=None,
+        student=None,
+        registration_id=None,
+        registration=None,
+        volunteer_application_id=None,
+        volunteer_application=None,
+        checked_in_at=None,
+        method="qr",
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.student_id = student.id if student is not None else student_id
+        self.registration_id = registration.id if registration is not None else registration_id
+        self.volunteer_application_id = (
+            volunteer_application.id
+            if volunteer_application is not None
+            else volunteer_application_id
+        )
+        self.checked_in_at = parse_datetime(checked_in_at) or _utcnow()
+        self.method = method or "qr"
+
+    @property
+    def event(self):
+        return Event.get(self.event_id)
+
+    @property
+    def student(self):
+        return User.get(self.student_id)
+
+    @property
+    def registration(self):
+        return EventRegistration.get(self.registration_id)
+
+    @property
+    def volunteer_application(self):
+        return VolunteerApplication.get(self.volunteer_application_id)
 
 
-class Attendance(db.Model):
-    __tablename__ = "attendance"
+class Notification(FirestoreModel):
+    collection_name = "notifications"
+    _fields = ("user_id", "title", "message", "link", "is_read", "created_at")
 
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    registration_id = db.Column(db.Integer, db.ForeignKey("event_registrations.id"), nullable=True)
-    volunteer_application_id = db.Column(db.Integer, db.ForeignKey("volunteer_applications.id"), nullable=True)
-    checked_in_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    method = db.Column(db.String(20), nullable=False, default="qr")
+    def __init__(
+        self,
+        id=None,
+        user_id=None,
+        user=None,
+        title="",
+        message="",
+        link=None,
+        is_read=False,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.user_id = user.id if user is not None else user_id
+        self.title = title
+        self.message = message
+        self.link = link
+        self.is_read = bool(is_read)
+        self.created_at = parse_datetime(created_at) or _utcnow()
 
-    event = db.relationship("Event")
-    student = db.relationship("User")
-    registration = db.relationship("EventRegistration")
-    volunteer_application = db.relationship("VolunteerApplication")
+    @property
+    def user(self):
+        return User.get(self.user_id)
 
-    __table_args__ = (
-        db.UniqueConstraint("event_id", "student_id", name="uq_event_student_attendance"),
-        db.Index("ix_attendance_event", "event_id"),
+
+class Certificate(FirestoreModel):
+    collection_name = "certificates"
+    _fields = (
+        "certificate_id",
+        "recipient_id",
+        "event_id",
+        "certificate_type",
+        "issue_date",
+        "pdf_path",
+        "is_valid",
+        "issued_by",
+        "created_at",
     )
 
+    def __init__(
+        self,
+        id=None,
+        certificate_id="",
+        recipient_id=None,
+        recipient=None,
+        event_id=None,
+        event=None,
+        certificate_type="participation",
+        issue_date=None,
+        pdf_path=None,
+        is_valid=True,
+        issued_by=None,
+        issuer=None,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.certificate_id = certificate_id
+        self.recipient_id = recipient.id if recipient is not None else recipient_id
+        self.event_id = event.id if event is not None else event_id
+        self.certificate_type = certificate_type
+        self.issue_date = parse_date(issue_date) or _utcnow().date()
+        self.pdf_path = pdf_path
+        self.is_valid = bool(is_valid)
+        self.issued_by = issuer.id if issuer is not None else issued_by
+        self.created_at = parse_datetime(created_at) or _utcnow()
 
-class Notification(db.Model):
-    __tablename__ = "notifications"
+    @property
+    def recipient(self):
+        return User.get(self.recipient_id)
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    title = db.Column(db.String(160), nullable=False)
-    message = db.Column(db.String(500), nullable=False)
-    link = db.Column(db.String(255))
-    is_read = db.Column(db.Boolean, default=False, nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    @property
+    def issuer(self):
+        return User.get(self.issued_by)
 
-    user = db.relationship("User")
+    @property
+    def event(self):
+        return Event.get(self.event_id)
 
 
-class Certificate(db.Model):
-    __tablename__ = "certificates"
+class Feedback(FirestoreModel):
+    collection_name = "feedback"
+    _fields = ("event_id", "student_id", "rating", "suggestions", "is_anonymous", "created_at")
 
-    id = db.Column(db.Integer, primary_key=True)
-    certificate_id = db.Column(db.String(40), unique=True, nullable=False, index=True)
-    recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    certificate_type = db.Column(db.String(30), nullable=False, index=True)
-    issue_date = db.Column(db.Date, nullable=False, default=lambda: datetime.now(timezone.utc).date())
-    pdf_path = db.Column(db.String(255))
-    is_valid = db.Column(db.Boolean, default=True, nullable=False)
-    issued_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        student_id=None,
+        student=None,
+        rating=5,
+        suggestions=None,
+        is_anonymous=False,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.student_id = student.id if student is not None else student_id
+        self.rating = int(rating)
+        self.suggestions = suggestions
+        self.is_anonymous = bool(is_anonymous)
+        self.created_at = parse_datetime(created_at) or _utcnow()
 
-    recipient = db.relationship("User", foreign_keys=[recipient_id])
-    issuer = db.relationship("User", foreign_keys=[issued_by])
-    event = db.relationship("Event")
+    @property
+    def event(self):
+        return Event.get(self.event_id)
 
-    __table_args__ = (
-        db.UniqueConstraint(
-            "recipient_id",
-            "event_id",
-            "certificate_type",
-            name="uq_certificate_recipient_event_type",
-        ),
+    @property
+    def student(self):
+        return User.get(self.student_id)
+
+
+class EventGallery(FirestoreModel):
+    collection_name = "event_galleries"
+    _fields = ("event_id", "image_path", "caption", "uploaded_by", "created_at")
+
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        image_path="",
+        caption=None,
+        uploaded_by=None,
+        uploader=None,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.image_path = image_path
+        self.caption = caption
+        self.uploaded_by = uploader.id if uploader is not None else uploaded_by
+        self.created_at = parse_datetime(created_at) or _utcnow()
+
+    @property
+    def event(self):
+        return Event.get(self.event_id)
+
+    @property
+    def uploader(self):
+        return User.get(self.uploaded_by)
+
+
+class VolunteerHours(FirestoreModel):
+    collection_name = "volunteer_hours"
+    _fields = ("student_id", "event_id", "hours", "note", "recorded_by", "recorded_at")
+
+    def __init__(
+        self,
+        id=None,
+        student_id=None,
+        student=None,
+        event_id=None,
+        event=None,
+        hours=0,
+        note=None,
+        recorded_by=None,
+        recorder=None,
+        recorded_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.student_id = student.id if student is not None else student_id
+        self.event_id = event.id if event is not None else event_id
+        self.hours = parse_decimal(hours)
+        self.note = note
+        self.recorded_by = recorder.id if recorder is not None else recorded_by
+        self.recorded_at = parse_datetime(recorded_at) or _utcnow()
+
+    @property
+    def student(self):
+        return User.get(self.student_id)
+
+    @property
+    def event(self):
+        return Event.get(self.event_id)
+
+    @property
+    def recorder(self):
+        return User.get(self.recorded_by)
+
+
+class EventBudget(FirestoreModel):
+    collection_name = "event_budgets"
+    _fields = ("event_id", "allocated_amount", "created_at")
+
+    def __init__(
+        self,
+        id=None,
+        event_id=None,
+        event=None,
+        allocated_amount=0,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.event_id = event.id if event is not None else event_id
+        self.allocated_amount = parse_decimal(allocated_amount)
+        self.created_at = parse_datetime(created_at) or _utcnow()
+
+    @property
+    def event(self):
+        return Event.get(self.event_id)
+
+    @property
+    def expenses(self):
+        return EventExpense.where(budget_id=self.id) if self.id is not None else []
+
+
+class EventExpense(FirestoreModel):
+    collection_name = "event_expenses"
+    _fields = ("budget_id", "category", "description", "amount", "expense_date", "created_at")
+
+    def __init__(
+        self,
+        id=None,
+        budget_id=None,
+        budget=None,
+        category="",
+        description=None,
+        amount=0,
+        expense_date=None,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.budget_id = budget.id if budget is not None else budget_id
+        self.category = category
+        self.description = description
+        self.amount = parse_decimal(amount)
+        self.expense_date = parse_date(expense_date)
+        self.created_at = parse_datetime(created_at) or _utcnow()
+
+    @property
+    def budget(self):
+        return EventBudget.get(self.budget_id)
+
+
+class Resource(FirestoreModel):
+    collection_name = "resources"
+    _fields = ("name", "resource_type", "location", "capacity", "is_active")
+
+    def __init__(
+        self,
+        id=None,
+        name="",
+        resource_type="",
+        location=None,
+        capacity=None,
+        is_active=True,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.name = name
+        self.resource_type = resource_type
+        self.location = location
+        self.capacity = int(capacity) if capacity is not None else None
+        self.is_active = bool(is_active)
+
+    @property
+    def bookings(self):
+        return ResourceBooking.where(resource_id=self.id) if self.id is not None else []
+
+
+class ResourceBooking(FirestoreModel):
+    collection_name = "resource_bookings"
+    _fields = (
+        "resource_id",
+        "event_id",
+        "requester_id",
+        "purpose",
+        "booking_date",
+        "start_time",
+        "end_time",
+        "status",
+        "created_at",
     )
 
+    def __init__(
+        self,
+        id=None,
+        resource_id=None,
+        resource=None,
+        event_id=None,
+        event=None,
+        requester_id=None,
+        requester=None,
+        purpose="",
+        booking_date=None,
+        start_time=None,
+        end_time=None,
+        status="confirmed",
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.resource_id = resource.id if resource is not None else resource_id
+        self.event_id = event.id if event is not None else event_id
+        self.requester_id = requester.id if requester is not None else requester_id
+        self.purpose = purpose
+        self.booking_date = parse_date(booking_date)
+        self.start_time = parse_time(start_time)
+        self.end_time = parse_time(end_time)
+        self.status = status or "confirmed"
+        self.created_at = parse_datetime(created_at) or _utcnow()
 
-class Feedback(db.Model):
-    __tablename__ = "feedback"
+    @property
+    def resource(self):
+        return Resource.get(self.resource_id)
 
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    rating = db.Column(db.Integer, nullable=False)
-    suggestions = db.Column(db.Text)
-    is_anonymous = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    @property
+    def event(self):
+        return Event.get(self.event_id)
 
-    event = db.relationship("Event")
-    student = db.relationship("User")
+    @property
+    def requester(self):
+        return User.get(self.requester_id)
 
-    __table_args__ = (
-        db.UniqueConstraint("event_id", "student_id", name="uq_feedback_event_student"),
-        db.CheckConstraint("rating >= 1 AND rating <= 5", name="ck_feedback_rating"),
+
+class StudentInterest(FirestoreModel):
+    collection_name = "student_interests"
+    _fields = ("student_id", "category_id", "created_at")
+
+    def __init__(
+        self,
+        id=None,
+        student_id=None,
+        student=None,
+        category_id=None,
+        category=None,
+        created_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.student_id = student.id if student is not None else student_id
+        self.category_id = category.id if category is not None else category_id
+        self.created_at = parse_datetime(created_at) or _utcnow()
+
+    @property
+    def student(self):
+        return User.get(self.student_id)
+
+    @property
+    def category(self):
+        return EventCategory.get(self.category_id)
+
+
+class User(UserMixin, FirestoreModel):
+    collection_name = "users"
+    _fields = (
+        "full_name",
+        "email",
+        "password_hash",
+        "student_id",
+        "phone",
+        "role_id",
+        "department_id",
+        "is_active",
+        "created_at",
+        "updated_at",
     )
 
+    def __init__(
+        self,
+        id=None,
+        full_name="",
+        email="",
+        password_hash="",
+        student_id=None,
+        phone=None,
+        role_id=None,
+        role=None,
+        department_id=None,
+        department=None,
+        is_active=True,
+        created_at=None,
+        updated_at=None,
+        **kwargs,
+    ):
+        super().__init__(id=id)
+        self.full_name = full_name
+        self.email = (email or "").strip().lower()
+        self.password_hash = password_hash
+        self.student_id = student_id
+        self.phone = phone
+        self.role_id = role.id if role is not None else role_id
+        self.department_id = department.id if department is not None else department_id
+        self._is_active = bool(is_active)
+        self.created_at = parse_datetime(created_at) or _utcnow()
+        self.updated_at = parse_datetime(updated_at) or _utcnow()
 
-class EventGallery(db.Model):
-    __tablename__ = "event_galleries"
+    @property
+    def is_active(self):
+        return self._is_active
 
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    image_path = db.Column(db.String(255), nullable=False)
-    caption = db.Column(db.String(255))
-    uploaded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    @is_active.setter
+    def is_active(self, value):
+        self._is_active = bool(value)
 
-    event = db.relationship("Event")
-    uploader = db.relationship("User", foreign_keys=[uploaded_by])
+    def get_id(self):
+        return str(self.id) if self.id is not None else None
 
+    def save(self):
+        self.updated_at = _utcnow()
+        return super().save()
 
-class VolunteerHours(db.Model):
-    __tablename__ = "volunteer_hours"
+    @property
+    def role(self):
+        return Role.get(self.role_id)
 
-    id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
-    hours = db.Column(db.Numeric(6, 2), nullable=False)
-    note = db.Column(db.String(255))
-    recorded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    recorded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-
-    student = db.relationship("User", foreign_keys=[student_id])
-    event = db.relationship("Event")
-    recorder = db.relationship("User", foreign_keys=[recorded_by])
-
-    __table_args__ = (
-        db.CheckConstraint("hours >= 0", name="ck_volunteer_hours_positive"),
-    )
-
-
-class EventBudget(db.Model):
-    __tablename__ = "event_budgets"
-
-    id = db.Column(db.Integer, primary_key=True)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), unique=True, nullable=False)
-    allocated_amount = db.Column(db.Numeric(12, 2), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    event = db.relationship("Event")
-    expenses = db.relationship("EventExpense", back_populates="budget", cascade="all, delete-orphan")
-
-
-class EventExpense(db.Model):
-    __tablename__ = "event_expenses"
-
-    id = db.Column(db.Integer, primary_key=True)
-    budget_id = db.Column(db.Integer, db.ForeignKey("event_budgets.id"), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text)
-    amount = db.Column(db.Numeric(12, 2), nullable=False)
-    expense_date = db.Column(db.Date, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    budget = db.relationship("EventBudget", back_populates="expenses")
-
-
-class Resource(db.Model):
-    __tablename__ = "resources"
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), unique=True, nullable=False)
-    resource_type = db.Column(db.String(50), nullable=False)
-    location = db.Column(db.String(160))
-    capacity = db.Column(db.Integer)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
-    bookings = db.relationship("ResourceBooking", back_populates="resource", cascade="all, delete-orphan")
-
-
-class ResourceBooking(db.Model):
-    __tablename__ = "resource_bookings"
-
-    id = db.Column(db.Integer, primary_key=True)
-    resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False)
-    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=True)
-    requester_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    purpose = db.Column(db.String(255), nullable=False)
-    booking_date = db.Column(db.Date, nullable=False, index=True)
-    start_time = db.Column(db.Time, nullable=False)
-    end_time = db.Column(db.Time, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="confirmed", index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-
-    resource = db.relationship("Resource", back_populates="bookings")
-    event = db.relationship("Event")
-    requester = db.relationship("User")
-
-
-class StudentInterest(db.Model):
-    __tablename__ = "student_interests"
-
-    id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey("event_categories.id"), nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-
-    student = db.relationship("User")
-    category = db.relationship("EventCategory")
-
-    __table_args__ = (
-        db.UniqueConstraint("student_id", "category_id", name="uq_student_category_interest"),
-    )
-
-
-class User(UserMixin, db.Model):
-    __tablename__ = "users"
-
-    id = db.Column(db.Integer, primary_key=True)
-    full_name = db.Column(db.String(120), nullable=False)
-    email = db.Column(db.String(180), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-    student_id = db.Column(db.String(50), unique=True)
-    phone = db.Column(db.String(20))
-    role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
-    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"))
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = db.Column(
-        db.DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-
-    role = db.relationship("Role", back_populates="users")
-    department = db.relationship("Department", back_populates="users")
+    @property
+    def department(self):
+        return Department.get(self.department_id)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -438,9 +990,10 @@ class User(UserMixin, db.Model):
 
     @property
     def role_name(self):
-        return self.role.name if self.role else None
+        role_obj = self.role
+        return role_obj.name if role_obj else None
 
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    return User.get(user_id)

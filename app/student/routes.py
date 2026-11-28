@@ -4,29 +4,31 @@ import secrets
 from flask import render_template
 from flask_login import current_user
 
-from app import db
 from app.decorators import roles_required
-from app.student import student
+from app.firestore_db import batch_write
 from app.models import (
     Attendance,
+    Certificate,
     Event,
     EventRegistration,
     VolunteerApplication,
     VolunteerAssignment,
     VolunteerTask,
-    Certificate,
 )
+from app.student import student
 
 
 def _ensure_volunteer_qr_tokens(applications):
     """Ensure approved volunteer applications have a qr_token for QR & key display."""
-    changed = False
+    updates = []
     for application in applications:
         if application.status == "approved" and not application.qr_token:
             application.qr_token = secrets.token_urlsafe(32)
-            changed = True
-    if changed:
-        db.session.commit()
+            updates.append(
+                ("update", VolunteerApplication.collection_name, application.id, {"qr_token": application.qr_token})
+            )
+    if updates:
+        batch_write(updates)
 
 
 @student.route("/")
@@ -35,70 +37,64 @@ def dashboard():
     from app.certificates.routes import sync_ended_event_certificates
 
     sync_ended_event_certificates(student_id=current_user.id)
-    registrations = (
-        EventRegistration.query.filter_by(
-            student_id=current_user.id,
-            status="confirmed",
-        )
-        .order_by(EventRegistration.registered_at.desc())
-        .all()
+    all_user_regs = EventRegistration.where(student_id=current_user.id)
+    registrations = sorted(
+        [reg for reg in all_user_regs if reg.status == "confirmed"],
+        key=lambda reg: reg.registered_at,
+        reverse=True,
     )
-    approved_volunteers = (
-        VolunteerApplication.query.filter_by(
-            student_id=current_user.id,
-            status="approved",
-        )
-        .order_by(VolunteerApplication.created_at.desc())
-        .all()
+    all_user_apps = VolunteerApplication.where(student_id=current_user.id)
+    approved_volunteers = sorted(
+        [app_rec for app_rec in all_user_apps if app_rec.status == "approved"],
+        key=lambda app_rec: app_rec.created_at,
+        reverse=True,
     )
     _ensure_volunteer_qr_tokens(approved_volunteers)
 
     registered_event_ids = {reg.event_id for reg in registrations}
-    compulsory_query = Event.query.filter(
-        Event.status == "published",
-        Event.registration_compulsory.is_(True),
-        Event.registration_deadline >= datetime.now(),
-    )
-    if current_user.department_id:
-        compulsory_query = compulsory_query.filter(
-            db.or_(
-                Event.department_id.is_(None),
-                Event.department_id == current_user.department_id,
+    now_naive = datetime.now()
+    pending_compulsory_events = sorted(
+        [
+            event
+            for event in Event.where(status="published", registration_compulsory=True)
+            if event.id not in registered_event_ids
+            and event.registration_deadline is not None
+            and event.registration_deadline >= now_naive
+            and (
+                event.department_id is None
+                or (current_user.department_id and event.department_id == current_user.department_id)
             )
-        )
-    else:
-        compulsory_query = compulsory_query.filter(Event.department_id.is_(None))
-    if registered_event_ids:
-        compulsory_query = compulsory_query.filter(~Event.id.in_(registered_event_ids))
-    pending_compulsory_events = compulsory_query.order_by(
-        Event.event_date.asc(),
-        Event.start_time.asc(),
-    ).all()
-
-    registered_events = len(registrations)
-    applications = VolunteerApplication.query.filter_by(student_id=current_user.id).count()
-    upcoming_events = (
-        EventRegistration.query.join(Event)
-        .filter(
-            EventRegistration.student_id == current_user.id,
-            EventRegistration.status == "confirmed",
-            Event.event_date >= date.today(),
-        )
-        .count()
+        ],
+        key=lambda e: (e.event_date, e.start_time),
     )
+
+    today = date.today()
+    upcoming_events = sum(
+        1 for reg in registrations if reg.event and reg.event.event_date >= today
+    )
+
+    assignment_ids = {
+        assignment.id
+        for assignment in VolunteerAssignment.all()
+        if any(a.id == assignment.application_id for a in all_user_apps)
+    }
+    assigned_tasks = (
+        sum(
+            1
+            for task in VolunteerTask.all()
+            if task.assignment_id in assignment_ids and task.status != "completed"
+        )
+        if assignment_ids
+        else 0
+    )
+
     stats = {
-        "registered_events": registered_events,
+        "registered_events": len(registrations),
         "upcoming_events": upcoming_events,
-        "volunteer_applications": applications,
-        "assigned_tasks": VolunteerTask.query.join(VolunteerAssignment).join(VolunteerApplication).filter(
-            VolunteerApplication.student_id == current_user.id,
-            VolunteerTask.status != "completed",
-        ).count(),
-        "available_certificates": Certificate.query.filter_by(
-            recipient_id=current_user.id,
-            is_valid=True,
-        ).count(),
-        "participation": Attendance.query.filter_by(student_id=current_user.id).count(),
+        "volunteer_applications": len(all_user_apps),
+        "assigned_tasks": assigned_tasks,
+        "available_certificates": Certificate.count(recipient_id=current_user.id, is_valid=True),
+        "participation": Attendance.count(student_id=current_user.id),
     }
     return render_template(
         "dashboards/student.html",
@@ -113,10 +109,10 @@ def dashboard():
 @student.route("/registrations")
 @roles_required("student")
 def registrations():
-    registration_list = (
-        EventRegistration.query.filter_by(student_id=current_user.id)
-        .order_by(EventRegistration.registered_at.desc())
-        .all()
+    registration_list = sorted(
+        EventRegistration.where(student_id=current_user.id),
+        key=lambda r: r.registered_at,
+        reverse=True,
     )
     return render_template("student/registrations.html", registration_list=registration_list)
 
@@ -124,10 +120,10 @@ def registrations():
 @student.route("/volunteer-applications")
 @roles_required("student")
 def volunteer_applications():
-    application_list = (
-        VolunteerApplication.query.filter_by(student_id=current_user.id)
-        .order_by(VolunteerApplication.created_at.desc())
-        .all()
+    application_list = sorted(
+        VolunteerApplication.where(student_id=current_user.id),
+        key=lambda a: a.created_at,
+        reverse=True,
     )
     _ensure_volunteer_qr_tokens(application_list)
     return render_template("student/applications.html", application_list=application_list)

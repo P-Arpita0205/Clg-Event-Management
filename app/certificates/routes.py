@@ -1,19 +1,13 @@
-import secrets
-from datetime import datetime, timezone
 from pathlib import Path
+import secrets
 
-import qrcode
 from flask import abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user
+import qrcode
 from reportlab.lib.colors import HexColor
-from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
-from app import db
 from app.certificates import certificates
 from app.decorators import roles_required
 from app.models import (
@@ -107,22 +101,22 @@ def make_certificate_pdf(certificate):
 def has_qr_attendance(event_id, student_id):
     """Return True if the student has a QR-scanned attendance record for the event."""
     return (
-        Attendance.query.filter_by(
+        Attendance.find_one(
             event_id=event_id,
             student_id=student_id,
             method="qr",
-        ).first()
+        )
         is not None
     )
 
 
 def _issue_certificate_record(event, student_id, certificate_type, issuer_id):
     """Create a certificate PDF record and notify the recipient if not already issued."""
-    existing = Certificate.query.filter_by(
+    existing = Certificate.find_one(
         recipient_id=student_id,
         event_id=event.id,
         certificate_type=certificate_type,
-    ).first()
+    )
     if existing:
         return None
 
@@ -139,10 +133,9 @@ def _issue_certificate_record(event, student_id, certificate_type, issuer_id):
         event_id=event.id,
         certificate_type=certificate_type,
         issued_by=issuer_id,
-    )
-    db.session.add(certificate)
-    db.session.flush()
+    ).save()
     certificate.pdf_path = make_certificate_pdf(certificate)
+    certificate.save()
     label = (
         "participation"
         if certificate_type == "participation"
@@ -165,32 +158,22 @@ def issue_eligible_certificates_for_event(event, issuer_id=None, student_id=None
         return 0
 
     effective_issuer_id = issuer_id or event.coordinator_id
-    attendance_query = Attendance.query.filter_by(event_id=event.id, method="qr")
+    qr_records = Attendance.where(event_id=event.id, method="qr")
     if student_id is not None:
-        attendance_query = attendance_query.filter_by(student_id=student_id)
-    attended_ids = {record.student_id for record in attendance_query.all()}
+        qr_records = [r for r in qr_records if r.student_id == student_id]
+    attended_ids = {record.student_id for record in qr_records}
     if not attended_ids:
         return 0
 
     participant_ids = {
-        row[0]
-        for row in db.session.query(EventRegistration.student_id)
-        .filter(
-            EventRegistration.event_id == event.id,
-            EventRegistration.status == "confirmed",
-            EventRegistration.student_id.in_(attended_ids),
-        )
-        .all()
+        reg.student_id
+        for reg in EventRegistration.where(event_id=event.id, status="confirmed")
+        if reg.student_id in attended_ids
     }
     volunteer_ids = {
-        row[0]
-        for row in db.session.query(VolunteerApplication.student_id)
-        .filter(
-            VolunteerApplication.event_id == event.id,
-            VolunteerApplication.status == "approved",
-            VolunteerApplication.student_id.in_(attended_ids),
-        )
-        .all()
+        app_rec.student_id
+        for app_rec in VolunteerApplication.where(event_id=event.id, status="approved")
+        if app_rec.student_id in attended_ids
     }
 
     created = 0
@@ -204,33 +187,40 @@ def issue_eligible_certificates_for_event(event, issuer_id=None, student_id=None
         ):
             created += 1
 
-    if created:
-        db.session.commit()
     return created
 
 
 def sync_ended_event_certificates(student_id=None, coordinator_id=None, event_id=None):
     """Ensure all ended events have issued certificates for QR-checked-in attendees."""
-    query = Event.query.filter(Event.status.in_(("published", "completed")))
     if event_id is not None:
-        query = query.filter(Event.id == event_id)
+        candidate = Event.get(event_id)
+        candidates = [candidate] if candidate and candidate.status in ("published", "completed") else []
     elif coordinator_id is not None:
-        query = query.filter(Event.coordinator_id == coordinator_id)
+        candidates = [
+            e
+            for e in Event.where(coordinator_id=coordinator_id)
+            if e.status in ("published", "completed")
+        ]
     elif student_id is not None:
-        query = (
-            query.join(Attendance, Attendance.event_id == Event.id)
-            .filter(Attendance.student_id == student_id, Attendance.method == "qr")
-            .distinct()
-        )
+        event_ids = {
+            r.event_id
+            for r in Attendance.where(student_id=student_id, method="qr")
+        }
+        candidates = [
+            e
+            for eid in event_ids
+            if (e := Event.get(eid)) is not None and e.status in ("published", "completed")
+        ]
     else:
-        query = (
-            query.join(Attendance, Attendance.event_id == Event.id)
-            .filter(Attendance.method == "qr")
-            .distinct()
-        )
+        event_ids = {r.event_id for r in Attendance.where(method="qr")}
+        candidates = [
+            e
+            for eid in event_ids
+            if (e := Event.get(eid)) is not None and e.status in ("published", "completed")
+        ]
 
     total_issued = 0
-    for event in query.all():
+    for event in candidates:
         if event.has_ended:
             total_issued += issue_eligible_certificates_for_event(event, student_id=student_id)
     return total_issued
@@ -239,7 +229,7 @@ def sync_ended_event_certificates(student_id=None, coordinator_id=None, event_id
 @certificates.route("/issue/participant/<int:event_id>/<int:student_id>", methods=["POST"])
 @roles_required("coordinator", "admin")
 def issue_participant(event_id, student_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
@@ -247,28 +237,27 @@ def issue_participant(event_id, student_id):
     if not event.has_ended:
         flash("Certificates can only be issued after the event has ended.", "warning")
         return redirect(request.referrer or url_for("certificates.history"))
-    registration = EventRegistration.query.filter_by(
+    registration = EventRegistration.find_one(
         event_id=event_id,
         student_id=student_id,
         status="confirmed",
-    ).first()
+    )
     if not registration:
         flash("Participation certificate can only be issued to confirmed event participants.", "danger")
         return redirect(request.referrer or url_for("certificates.history"))
     if not has_qr_attendance(event_id, student_id):
         flash("QR code attendance must be scanned before issuing a participation certificate.", "danger")
         return redirect(request.referrer or url_for("certificates.history"))
-    existing = Certificate.query.filter_by(
+    existing = Certificate.find_one(
         recipient_id=student_id,
         event_id=event_id,
         certificate_type="participation",
-    ).first()
+    )
     if existing:
         flash("Participation certificate was already issued.", "info")
         return redirect(url_for("certificates.history"))
 
     _issue_certificate_record(event, student_id, "participation", current_user.id)
-    db.session.commit()
     flash("Participation certificate issued.", "success")
     return redirect(url_for("certificates.history"))
 
@@ -276,7 +265,7 @@ def issue_participant(event_id, student_id):
 @certificates.route("/issue/volunteer/<int:event_id>/<int:student_id>", methods=["POST"])
 @roles_required("coordinator", "admin")
 def issue_volunteer(event_id, student_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
@@ -284,28 +273,27 @@ def issue_volunteer(event_id, student_id):
     if not event.has_ended:
         flash("Certificates can only be issued after the event has ended.", "warning")
         return redirect(request.referrer or url_for("certificates.history"))
-    application = VolunteerApplication.query.filter_by(
+    application = VolunteerApplication.find_one(
         event_id=event_id,
         student_id=student_id,
         status="approved",
-    ).first()
+    )
     if not application:
         flash("Volunteer certificate can only be issued to approved volunteers.", "danger")
         return redirect(request.referrer or url_for("certificates.history"))
     if not has_qr_attendance(event_id, student_id):
         flash("QR code attendance must be scanned before issuing a volunteer certificate.", "danger")
         return redirect(request.referrer or url_for("certificates.history"))
-    existing = Certificate.query.filter_by(
+    existing = Certificate.find_one(
         recipient_id=student_id,
         event_id=event_id,
         certificate_type="volunteer",
-    ).first()
+    )
     if existing:
         flash("Volunteer certificate was already issued.", "info")
         return redirect(url_for("certificates.history"))
 
     _issue_certificate_record(event, student_id, "volunteer", current_user.id)
-    db.session.commit()
     flash("Volunteer certificate issued.", "success")
     return redirect(url_for("certificates.history"))
 
@@ -313,7 +301,7 @@ def issue_volunteer(event_id, student_id):
 @certificates.route("/issue/event/<int:event_id>", methods=["POST"])
 @roles_required("coordinator", "admin")
 def issue_event(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
     if current_user.role_name != "admin" and event.coordinator_id != current_user.id:
@@ -336,35 +324,19 @@ def issue_event(event_id):
 @certificates.route("/issue/coordinator/<int:event_id>", methods=["POST"])
 @roles_required("admin")
 def issue_coordinator(event_id):
-    event = db.session.get(Event, event_id)
+    event = Event.get(event_id)
     if not event:
         abort(404)
-    existing = Certificate.query.filter_by(
+    existing = Certificate.find_one(
         recipient_id=event.coordinator_id,
         event_id=event_id,
         certificate_type="coordination",
-    ).first()
+    )
     if existing:
         flash("Coordinator certificate was already issued.", "info")
         return redirect(url_for("certificates.history"))
 
-    certificate = Certificate(
-        certificate_id=f"CCC-{event_id}-{event.coordinator_id}-{secrets.token_hex(4).upper()}",
-        recipient_id=event.coordinator_id,
-        event_id=event_id,
-        certificate_type="coordination",
-        issued_by=current_user.id,
-    )
-    db.session.add(certificate)
-    db.session.flush()
-    certificate.pdf_path = make_certificate_pdf(certificate)
-    notify(
-        event.coordinator_id,
-        "Certificate available",
-        f"Your event coordination certificate for {event.title} is ready.",
-        url_for("certificates.history"),
-    )
-    db.session.commit()
+    _issue_certificate_record(event, event.coordinator_id, "coordination", current_user.id)
     flash("Coordinator certificate issued.", "success")
     return redirect(url_for("certificates.history"))
 
@@ -374,32 +346,33 @@ def issue_coordinator(event_id):
 def history():
     if current_user.role_name == "admin":
         sync_ended_event_certificates()
-        items = Certificate.query.order_by(Certificate.created_at.desc()).all()
+        items = sorted(Certificate.all(), key=lambda c: c.created_at, reverse=True)
     elif current_user.role_name == "coordinator":
         sync_ended_event_certificates(coordinator_id=current_user.id)
-        items = (
-            Certificate.query.join(Event)
-            .filter(
-                db.or_(
-                    Certificate.recipient_id == current_user.id,
-                    Event.coordinator_id == current_user.id,
-                )
-            )
-            .order_by(Certificate.created_at.desc())
-            .all()
+        managed_event_ids = {e.id for e in Event.where(coordinator_id=current_user.id)}
+        items = sorted(
+            [
+                cert
+                for cert in Certificate.all()
+                if cert.recipient_id == current_user.id or cert.event_id in managed_event_ids
+            ],
+            key=lambda c: c.created_at,
+            reverse=True,
         )
     else:
         sync_ended_event_certificates(student_id=current_user.id)
-        items = Certificate.query.filter_by(recipient_id=current_user.id).order_by(
-            Certificate.created_at.desc()
-        ).all()
+        items = sorted(
+            Certificate.where(recipient_id=current_user.id),
+            key=lambda c: c.created_at,
+            reverse=True,
+        )
     return render_template("certificates/history.html", items=items)
 
 
 @certificates.route("/download/<int:certificate_id>")
 @roles_required("student", "coordinator", "admin")
 def download(certificate_id):
-    certificate = db.session.get(Certificate, certificate_id)
+    certificate = Certificate.get(certificate_id)
     if not certificate:
         abort(404)
     if (
@@ -416,7 +389,7 @@ def download(certificate_id):
 
 @certificates.route("/verify/<certificate_id>")
 def verify(certificate_id):
-    certificate = Certificate.query.filter_by(certificate_id=certificate_id).first()
+    certificate = Certificate.find_one(certificate_id=certificate_id)
     if not certificate or not certificate.is_valid:
         return render_template(
             "certificates/verify.html",

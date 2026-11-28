@@ -10,10 +10,10 @@ load_dotenv(BASE_DIR / ".env")
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "development-only-secret-change-me")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", "sqlite:///college_events.db"
-    )
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
+    FIREBASE_CREDENTIALS_PATH = os.environ.get("FIREBASE_CREDENTIALS_PATH", "").strip()
+    FIREBASE_CREDENTIALS_JSON = os.environ.get("FIREBASE_CREDENTIALS_JSON", "").strip()
+    FIRESTORE_BACKEND = os.environ.get("FIRESTORE_BACKEND", "firestore").strip().lower()
     WTF_CSRF_ENABLED = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
@@ -29,12 +29,4 @@ class ProductionConfig(Config):
     WTF_CSRF_ENABLED = True
     DEBUG = False
     TESTING = False
-    SQLALCHEMY_ENGINE_OPTIONS = (
-        {}
-        if Config.SQLALCHEMY_DATABASE_URI.startswith("sqlite:")
-        else {
-            "pool_pre_ping": True,
-            "pool_recycle": 280,
-        }
-    )
     SEND_FILE_MAX_AGE_DEFAULT = 86400
